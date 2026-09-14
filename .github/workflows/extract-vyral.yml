@@ -1,4 +1,4 @@
-name: Extract VYRAL Production Package
+name: Extract VYRAL Production Source
 
 on:
   workflow_dispatch:
@@ -7,7 +7,8 @@ permissions:
   contents: write
 
 jobs:
-  extract-vyral:
+  extract:
+    name: Extract audited VYRAL source
     runs-on: ubuntu-latest
 
     steps:
@@ -16,63 +17,103 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Find and extract VYRAL ZIP
+      - name: Verify audited ZIP exists
         shell: bash
         run: |
           set -euo pipefail
 
-          ZIP_FILE="$(find . -maxdepth 2 -type f -iname '*.zip' | head -n 1)"
+          ZIP_FILE="VYRAL_final_audited_postextract.zip"
 
-          if [ -z "${ZIP_FILE}" ]; then
-            echo "ERROR: No ZIP file found in the repository."
+          if [ ! -f "$ZIP_FILE" ]; then
+            echo "ERROR: $ZIP_FILE was not found."
+            echo "ZIP files currently in repository:"
+            find . -maxdepth 2 -type f -iname "*.zip" -print
             exit 1
           fi
 
-          echo "Using: ${ZIP_FILE}"
+          echo "Using audited package:"
+          echo "$ZIP_FILE"
 
-          rm -rf .vyral_extract
-          mkdir -p .vyral_extract
-
-          unzip -q "$ZIP_FILE" -d .vyral_extract
-
-          # Detect whether the ZIP has a single top-level directory.
-          ROOT="$(find .vyral_extract -mindepth 1 -maxdepth 1 -type d | head -n 1)"
-
-          if [ -n "$ROOT" ] && [ "$(find .vyral_extract -mindepth 1 -maxdepth 1 | wc -l)" -eq 1 ]; then
-            SOURCE="$ROOT"
-          else
-            SOURCE=".vyral_extract"
-          fi
-
-          echo "Extracted source: $SOURCE"
-
-          # Preserve the archive and workflow, but replace the repository's
-          # application files with the extracted production source.
-          find . -mindepth 1 -maxdepth 1 \
-            ! -name '.git' \
-            ! -name '.github' \
-            ! -name '*.zip' \
-            ! -name '.vyral_extract' \
-            -exec rm -rf {} +
-
-          cp -a "$SOURCE"/. .
-
-          rm -rf .vyral_extract
-
-      - name: Verify extracted project
+      - name: Extract VYRAL source
         shell: bash
         run: |
           set -euo pipefail
+
+          ZIP_FILE="VYRAL_final_audited_postextract.zip"
+          EXTRACT_DIR=".vyral_extract"
+
+          rm -rf "$EXTRACT_DIR"
+          mkdir -p "$EXTRACT_DIR"
+
+          echo "Extracting $ZIP_FILE..."
+          unzip -q "$ZIP_FILE" -d "$EXTRACT_DIR"
+
+          echo "Extracted contents:"
+          find "$EXTRACT_DIR" -maxdepth 3 -type f | sort
+
+      - name: Locate project root
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          EXTRACT_DIR=".vyral_extract"
+
+          # Find package.json anywhere inside the extracted archive.
+          PACKAGE_JSON="$(find "$EXTRACT_DIR" -type f -name "package.json" | head -n 1)"
+
+          if [ -z "$PACKAGE_JSON" ]; then
+            echo "ERROR: package.json was not found inside the ZIP."
+            exit 1
+          fi
+
+          PROJECT_ROOT="$(dirname "$PACKAGE_JSON")"
+
+          echo "VYRAL project root:"
+          echo "$PROJECT_ROOT"
+
+          echo "PROJECT_ROOT=$PROJECT_ROOT" >> "$GITHUB_ENV"
+
+      - name: Replace repository with extracted source
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Removing old repository files..."
+
+          find . -mindepth 1 -maxdepth 1 \
+            ! -name ".git" \
+            ! -name ".github" \
+            ! -name "VYRAL_final_audited_postextract.zip" \
+            ! -name "VYRAL_final_production_ready.zip" \
+            ! -name ".vyral_extract" \
+            -exec rm -rf {} +
+
+          echo "Copying VYRAL source..."
+
+          cp -a "$PROJECT_ROOT"/. .
+
+          rm -rf .vyral_extract
+
+      - name: Verify VYRAL project
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Verifying extracted project..."
 
           test -f package.json
           test -f server.ts
           test -d src
           test -d drizzle
 
-          echo "VYRAL extraction verification passed."
           echo
-          echo "Top-level files:"
-          ls -la
+          echo "Verification successful."
+          echo
+          echo "VYRAL source tree:"
+          find . -maxdepth 2 -type f \
+            ! -path "./.git/*" \
+            ! -name "*.zip" \
+            | sort
 
       - name: Commit extracted source
         shell: bash
@@ -85,9 +126,15 @@ jobs:
           git add -A
 
           if git diff --cached --quiet; then
-            echo "No changes to commit."
+            echo "No changes detected."
             exit 0
           fi
 
-          git commit -m "Extract VYRAL production source from package"
-          git push
+          git commit -m "Extract audited VYRAL production source"
+
+      - name: Push extracted source
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git push origin HEAD:main
