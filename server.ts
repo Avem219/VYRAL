@@ -31,7 +31,8 @@ async function main() {
   // should provide the two declared Redis packages and REDIS_URL.
   if (process.env.REDIS_URL) {
     try {
-      const dynamicImport = new Function("specifier", "return import(specifier)") as (specifier: string) => Promise<any>;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+const dynamicImport = new Function("specifier", "return import(specifier)") as (specifier: string) => Promise<any>;
       const [{ createAdapter }, { default: Redis }] = await Promise.all([
         dynamicImport("@socket.io/redis-adapter"),
         dynamicImport("ioredis"),
