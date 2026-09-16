@@ -190,7 +190,7 @@ export function newStorageKey(ownerId: string, originalName: string) {
 }
 
 export const ALLOWED_MIME_PREFIXES = ["image/", "video/", "audio/"];
-export const MAX_UPLOAD_BYTES = 100 * 1024 * 1024; // 100MB
+export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // 100MB
 
 export function kindForMime(mime: string): "image" | "video" | "audio" | null {
   if (mime.startsWith("image/")) return "image";
