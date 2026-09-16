@@ -2,8 +2,8 @@ import { Client } from "pg";
 import path from "path";
 
 const ADMIN_URL =
-  process.env.TEST_DATABASE_ADMIN_URL || "postgres://vyral:vyral_dev_password@localhost:5432/postgres";
-
+  process.env.TEST_DATABASE_ADMIN_URL ||
+  "postgres://vyral:vyral@localhost:5432/postgres";
 /**
  * Creates a fresh, uniquely-named Postgres database, applies the real
  * migration chain to it, and points DATABASE_URL at it. Must be called
