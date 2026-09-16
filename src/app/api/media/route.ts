@@ -1,4 +1,4 @@
-
+```ts
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db, schema } from "@/db";
