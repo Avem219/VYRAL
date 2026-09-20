@@ -1,0 +1,80 @@
+name: Fix VYRAL Runtime Imports
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix-runtime-imports:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install --ignore-scripts
+
+      - name: Fix custom-server runtime imports
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          root = Path("src/lib")
+
+          for path in root.rglob("*.ts"):
+              text = path.read_text()
+
+              original = text
+
+              # src/lib/*.ts -> src/db
+              text = re.sub(
+                  r'(["\'])@/db\1',
+                  r'\1../db\1',
+                  text
+              )
+
+              # src/lib/*.ts -> src/lib/*.ts
+              text = re.sub(
+                  r'(["\'])@/lib/([^"\']+)\1',
+                  lambda m: f'{m.group(1)}./{m.group(2)}{m.group(1)}',
+                  text
+              )
+
+              if text != original:
+                  path.write_text(text)
+                  print(f"Fixed: {path}")
+
+          PY
+
+      - name: Show remaining aliases in src/lib
+        run: |
+          echo "Remaining @/ imports under src/lib:"
+          grep -RInE 'from ["'\'']@/' src/lib || true
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Commit fixes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git diff --quiet; then
+            echo "No runtime import changes needed."
+            exit 0
+          fi
+
+          git add src/lib
+          git commit -m "Fix runtime path aliases in server modules"
+          git push
