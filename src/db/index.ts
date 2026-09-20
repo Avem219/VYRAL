@@ -2,10 +2,12 @@ import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import * as schema from "./schema";
 
-let pool: Pool | undefined;
-let dbInstance: ReturnType<typeof drizzle<typeof schema>> | undefined;
+let poolInstance: Pool | null = null;
+let dbInstance: ReturnType<typeof drizzle> | null = null;
 
-function getConnectionString() {
+function getPool(): Pool {
+  if (poolInstance) return poolInstance;
+
   const connectionString = process.env.DATABASE_URL;
 
   if (!connectionString) {
@@ -15,25 +17,40 @@ function getConnectionString() {
     );
   }
 
-  return connectionString;
+  poolInstance = new Pool({ connectionString });
+  return poolInstance;
 }
 
-export function getPool() {
-  if (!pool) {
-    pool = new Pool({
-      connectionString: getConnectionString(),
-    });
-  }
-
-  return pool;
-}
-
-export function getDb() {
+function getDb() {
   if (!dbInstance) {
     dbInstance = drizzle(getPool(), { schema });
   }
 
   return dbInstance;
 }
+
+export const db = new Proxy({} as ReturnType<typeof drizzle>, {
+  get(_target, property) {
+    const value = Reflect.get(getDb(), property);
+
+    if (typeof value === "function") {
+      return value.bind(getDb());
+    }
+
+    return value;
+  },
+});
+
+export const pool = new Proxy({} as Pool, {
+  get(_target, property) {
+    const value = Reflect.get(getPool(), property);
+
+    if (typeof value === "function") {
+      return value.bind(getPool());
+    }
+
+    return value;
+  },
+});
 
 export { schema };
