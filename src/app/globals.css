@@ -1,0 +1,188 @@
+@import "tailwindcss";
+
+:root {
+  --vy-void: #0a0a0c;        /* base background */
+  --vy-obsidian: #101013;    /* raised surface */
+  --vy-graphite: #17171b;    /* panel surface */
+  --vy-charcoal: #232327;    /* borders / dividers */
+  --vy-steel: #6b6b74;       /* muted text */
+  --vy-off-white: #eceef0;   /* primary text */
+  --vy-crimson: #e11d2e;     /* performance red — primary accent */
+  --vy-crimson-dim: #7d1019; /* pressed / muted red */
+  --vy-signal-blue: #4a7dff; /* info, sparingly */
+  --vy-signal-green: #3ecf6e;/* success, sparingly */
+  --vy-signal-amber: #e3a635;/* warning, sparingly */
+  --vy-violet: #8b6bff;      /* music accent, sparingly */
+
+  --background: var(--vy-void);
+  --foreground: var(--vy-off-white);
+}
+
+@theme inline {
+  --color-void: var(--vy-void);
+  --color-obsidian: var(--vy-obsidian);
+  --color-graphite: var(--vy-graphite);
+  --color-charcoal: var(--vy-charcoal);
+  --color-steel: var(--vy-steel);
+  --color-offwhite: var(--vy-off-white);
+  --color-crimson: var(--vy-crimson);
+  --color-crimson-dim: var(--vy-crimson-dim);
+  --color-signal-blue: var(--vy-signal-blue);
+  --color-signal-green: var(--vy-signal-green);
+  --color-signal-amber: var(--vy-signal-amber);
+  --color-violet: var(--vy-violet);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: ui-sans-serif, "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  letter-spacing: -0.011em;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Chamfered corner — the platform's signature shape device. Used sparingly
+   on primary surfaces (nav rail, primary buttons, identity cards), not on
+   every rectangle in the UI. */
+.vy-chamfer {
+  clip-path: polygon(
+    14px 0,
+    100% 0,
+    100% calc(100% - 14px),
+    calc(100% - 14px) 100%,
+    0 100%,
+    0 14px
+  );
+}
+.vy-chamfer-sm {
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+}
+
+.vy-panel {
+  background: var(--vy-graphite);
+  border: 1px solid var(--vy-charcoal);
+}
+
+.vy-hairline {
+  border-color: var(--vy-charcoal);
+}
+
+::selection {
+  background: var(--vy-crimson);
+  color: white;
+}
+
+.vy-input {
+  width: 100%;
+  background: var(--vy-obsidian);
+  border: 1px solid var(--vy-charcoal);
+  color: var(--vy-off-white);
+  padding: 0.6rem 0.75rem;
+  font-size: 0.875rem;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+.vy-input:focus-visible {
+  border-color: var(--vy-crimson);
+}
+
+.vy-btn-primary {
+  background: var(--vy-crimson);
+  color: white;
+  font-size: 0.875rem;
+  font-weight: 600;
+  padding: 0.65rem 1rem;
+  transition: background 0.15s ease;
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+}
+.vy-btn-primary:hover:not(:disabled) {
+  background: var(--vy-crimson-dim);
+}
+.vy-btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.vy-btn-secondary {
+  background: var(--vy-graphite);
+  border: 1px solid var(--vy-charcoal);
+  color: var(--vy-off-white);
+  font-size: 0.875rem;
+  font-weight: 500;
+  padding: 0.6rem 1rem;
+  transition: border-color 0.15s ease;
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+}
+.vy-btn-secondary:hover:not(:disabled) {
+  border-color: var(--vy-crimson);
+}
+.vy-btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+.eyebrow{font-size:10px;line-height:1;text-transform:uppercase;letter-spacing:.24em;color:var(--vy-crimson);font-weight:700}
+.icon-action{display:flex;flex-direction:column;align-items:center;gap:3px;color:#fff;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.1);border-radius:999px;padding:9px;min-width:44px;min-height:44px;font-size:10px;backdrop-filter:blur(10px)}
+.icon-action svg{width:21px;height:21px}
+button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid var(--vy-crimson);outline-offset:2px}
+@media (max-width:767px){body{padding-bottom:64px}.vy-panel{border-radius:2px}.desktop-only{display:none!important}}
+.safe-bottom{padding-bottom:max(.25rem,env(safe-area-inset-bottom))}
+
+/* VYRAL glass system — shared across every screen. */
+:root {
+  --vy-glass: rgba(18, 18, 22, .72);
+  --vy-glass-strong: rgba(12, 12, 15, .88);
+  --vy-line: rgba(255,255,255,.075);
+  --vy-glow: rgba(225,29,46,.18);
+}
+[data-theme="signal"] { --vy-crimson:#ff3045; --vy-glow:rgba(255,48,69,.22); }
+[data-theme="aerodynamic"] { --vy-crimson:#d8dbe0; --vy-crimson-dim:#8e949c; --vy-glow:rgba(216,219,224,.14); }
+[data-theme="immersive"] { --vy-crimson:#a855f7; --vy-crimson-dim:#6d28d9; --vy-glow:rgba(168,85,247,.2); }
+[data-theme="minimal"] { --vy-crimson:#ef4444; --vy-glow:rgba(239,68,68,.1); }
+
+.vy-glass {
+  background: linear-gradient(145deg, rgba(255,255,255,.055), rgba(255,255,255,.018)), var(--vy-glass);
+  border: 1px solid var(--vy-line);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.035), 0 14px 40px rgba(0,0,0,.18);
+  backdrop-filter: blur(18px) saturate(125%);
+  -webkit-backdrop-filter: blur(18px) saturate(125%);
+}
+.vy-panel { background: linear-gradient(145deg, rgba(255,255,255,.035), rgba(255,255,255,.012)), var(--vy-graphite); border-color: var(--vy-line); box-shadow: 0 10px 35px rgba(0,0,0,.14); }
+.vy-panel:hover { border-color: rgba(255,255,255,.12); }
+.vy-btn-primary { box-shadow: 0 0 0 1px rgba(255,255,255,.04), 0 8px 24px var(--vy-glow); }
+.vy-input { background: rgba(0,0,0,.25); border-color: var(--vy-line); border-radius: 2px; }
+.vy-topbar { background: rgba(8,8,10,.72); border-bottom:1px solid var(--vy-line); backdrop-filter: blur(20px); }
+.vy-mobile-nav { background: rgba(8,8,10,.86); border-top:1px solid var(--vy-line); backdrop-filter: blur(22px); }
+.vy-sidebar-active { background: linear-gradient(90deg, rgba(225,29,46,.13), transparent); border-left:2px solid var(--vy-crimson); }
+.vy-scanline { position:relative; overflow:hidden; }
+.vy-scanline::after { content:""; position:absolute; inset:0; pointer-events:none; background:linear-gradient(transparent 50%, rgba(255,255,255,.012) 50%); background-size:100% 4px; mix-blend-mode:screen; opacity:.35; }
+@media (max-width: 1279px) { .vyral-workspace > main { width:100%; } }
+@media (max-width: 767px) { .vyral-workspace > main { padding-bottom: 74px; } }
+.chat-carbon { --chat-a: rgba(255,255,255,.08); --chat-b: #e11d2e; }
+.chat-crimson { --chat-a: rgba(225,29,46,.16); --chat-b: #ff3045; background: radial-gradient(circle at 80% 10%, rgba(225,29,46,.08), transparent 35%), var(--vy-void); }
+.chat-glass { --chat-a: rgba(255,255,255,.11); --chat-b: #e11d2e; background: radial-gradient(circle at 20% 20%, rgba(255,255,255,.04), transparent 35%), var(--vy-void); }
+.chat-aurora { --chat-a: rgba(139,92,246,.18); --chat-b: #a855f7; background: radial-gradient(circle at 80% 20%, rgba(168,85,247,.1), transparent 35%), var(--vy-void); }
+.chat-crimson .bg-crimson, .chat-glass .bg-crimson, .chat-aurora .bg-crimson { background: var(--chat-b) !important; }
