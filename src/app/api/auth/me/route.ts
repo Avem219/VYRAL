@@ -14,7 +14,12 @@ export async function GET() {
     .limit(1);
 
   return NextResponse.json({
-    user: { id: user.id, email: user.email, username: user.username },
+    user: {
+      id: user.id,
+      email: user.email,
+      username: user.username,
+      role: user.role,
+    },
     profile: profile ?? null,
   });
 }
