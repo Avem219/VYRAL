@@ -1,6 +1,6 @@
 import{ db, schema } from "../db";
 import { and, eq, inArray, or, desc, lt } from "drizzle-orm";
-import { emitToConversation, emitToUser } from "@/lib/realtime";
+import { emitToConversation, emitToUser } from "./realtime";
 
 export class MessagingAuthError extends Error {}
 
