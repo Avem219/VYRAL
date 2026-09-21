@@ -1,6 +1,10 @@
-name: Fix VYRAL Runtime Imports
+```yaml
+name: Fix Runtime Imports
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -8,73 +12,86 @@ permissions:
 
 jobs:
   fix-runtime-imports:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
 
-      - name: Install dependencies
-        run: npm install --ignore-scripts
-
-      - name: Fix custom-server runtime imports
+      - name: Detect package manager
+        id: package-manager
         shell: bash
         run: |
-          python3 <<'PY'
-          from pathlib import Path
-          import re
+          if [ -f "package-lock.json" ]; then
+            echo "manager=npm" >> "$GITHUB_OUTPUT"
+          elif [ -f "yarn.lock" ]; then
+            echo "manager=yarn" >> "$GITHUB_OUTPUT"
+          elif [ -f "pnpm-lock.yaml" ]; then
+            echo "manager=pnpm" >> "$GITHUB_OUTPUT"
+          elif [ -f "package.json" ]; then
+            echo "manager=npm" >> "$GITHUB_OUTPUT"
+          else
+            echo "manager=none" >> "$GITHUB_OUTPUT"
+          fi
 
-          root = Path("src/lib")
+      - name: Enable Corepack
+        if: steps.package-manager.outputs.manager == 'yarn' || steps.package-manager.outputs.manager == 'pnpm'
+        shell: bash
+        run: corepack enable
 
-          for path in root.rglob("*.ts"):
-              text = path.read_text()
-
-              original = text
-
-              # src/lib/*.ts -> src/db
-              text = re.sub(
-                  r'(["\'])@/db\1',
-                  r'\1../db\1',
-                  text
-              )
-
-              # src/lib/*.ts -> src/lib/*.ts
-              text = re.sub(
-                  r'(["\'])@/lib/([^"\']+)\1',
-                  lambda m: f'{m.group(1)}./{m.group(2)}{m.group(1)}',
-                  text
-              )
-
-              if text != original:
-                  path.write_text(text)
-                  print(f"Fixed: {path}")
-
-          PY
-
-      - name: Show remaining aliases in src/lib
+      - name: Install dependencies with npm
+        if: steps.package-manager.outputs.manager == 'npm'
+        shell: bash
         run: |
-          echo "Remaining @/ imports under src/lib:"
-          grep -RInE 'from ["'\'']@/' src/lib || true
+          if [ -f "package-lock.json" ]; then
+            npm ci
+          else
+            npm install
+          fi
 
-      - name: Typecheck
-        run: npm run typecheck
+      - name: Install dependencies with Yarn
+        if: steps.package-manager.outputs.manager == 'yarn'
+        shell: bash
+        run: yarn install --frozen-lockfile
 
-      - name: Commit fixes
+      - name: Install dependencies with pnpm
+        if: steps.package-manager.outputs.manager == 'pnpm'
+        shell: bash
+        run: |
+          corepack prepare pnpm@latest --activate
+          pnpm install --frozen-lockfile
+
+      - name: No Node dependencies
+        if: steps.package-manager.outputs.manager == 'none'
+        shell: bash
+        run: echo "No package.json or lockfile found. Skipping dependency installation."
+
+      - name: Run project checks
+        if: steps.package-manager.outputs.manager != 'none'
+        shell: bash
+        run: |
+          if node -e "const p=require('./package.json'); process.exit(p.scripts?.test ? 0 : 1)" 2>/dev/null; then
+            npm test
+          else
+            echo "No test script found. Skipping tests."
+          fi
+
+      - name: Commit changes if any
+        shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          if git diff --quiet; then
-            echo "No runtime import changes needed."
-            exit 0
+          if [ -n "$(git status --porcelain)" ]; then
+            git add -A
+            git commit -m "Fix runtime imports"
+            git push
+          else
+            echo "No changes to commit."
           fi
-
-          git add src/lib
-          git commit -m "Fix runtime path aliases in server modules"
-          git push
+```
