@@ -1,4 +1,3 @@
-```yaml
 name: Fix Runtime Imports
 
 on:
@@ -94,4 +93,4 @@ jobs:
           else
             echo "No changes to commit."
           fi
-```
+
