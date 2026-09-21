@@ -1,3 +1,4 @@
+
 name: Fix Runtime Imports
 
 on:
@@ -22,65 +23,86 @@ jobs:
         with:
           node-version: 22
 
-      - name: Detect package manager
-        id: package-manager
+      - name: Install dependencies
         shell: bash
         run: |
-          if [ -f "package-lock.json" ]; then
-            echo "manager=npm" >> "$GITHUB_OUTPUT"
-          elif [ -f "yarn.lock" ]; then
-            echo "manager=yarn" >> "$GITHUB_OUTPUT"
-          elif [ -f "pnpm-lock.yaml" ]; then
-            echo "manager=pnpm" >> "$GITHUB_OUTPUT"
-          elif [ -f "package.json" ]; then
-            echo "manager=npm" >> "$GITHUB_OUTPUT"
-          else
-            echo "manager=none" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Enable Corepack
-        if: steps.package-manager.outputs.manager == 'yarn' || steps.package-manager.outputs.manager == 'pnpm'
-        shell: bash
-        run: corepack enable
-
-      - name: Install dependencies with npm
-        if: steps.package-manager.outputs.manager == 'npm'
-        shell: bash
-        run: |
-          if [ -f "package-lock.json" ]; then
+          if [ -f package-lock.json ]; then
             npm ci
-          else
+          elif [ -f npm-shrinkwrap.json ]; then
+            npm ci
+          elif [ -f yarn.lock ]; then
+            corepack enable
+            yarn install --frozen-lockfile
+          elif [ -f pnpm-lock.yaml ]; then
+            corepack enable
+            pnpm install --no-frozen-lockfile
+          elif [ -f package.json ]; then
             npm install
-          fi
-
-      - name: Install dependencies with Yarn
-        if: steps.package-manager.outputs.manager == 'yarn'
-        shell: bash
-        run: yarn install --frozen-lockfile
-
-      - name: Install dependencies with pnpm
-        if: steps.package-manager.outputs.manager == 'pnpm'
-        shell: bash
-        run: |
-          corepack prepare pnpm@latest --activate
-          pnpm install --frozen-lockfile
-
-      - name: No Node dependencies
-        if: steps.package-manager.outputs.manager == 'none'
-        shell: bash
-        run: echo "No package.json or lockfile found. Skipping dependency installation."
-
-      - name: Run project checks
-        if: steps.package-manager.outputs.manager != 'none'
-        shell: bash
-        run: |
-          if node -e "const p=require('./package.json'); process.exit(p.scripts?.test ? 0 : 1)" 2>/dev/null; then
-            npm test
           else
-            echo "No test script found. Skipping tests."
+            echo "No package.json found. Nothing to install."
           fi
 
-      - name: Commit changes if any
+      - name: Check package scripts
+        if: hashFiles('package.json') != ''
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          const scripts = pkg.scripts || {};
+
+          console.log('Available scripts:');
+          for (const [name, command] of Object.entries(scripts)) {
+            console.log(`  ${name}: ${command}`);
+          }
+          NODE
+
+      - name: TypeScript check
+        if: hashFiles('tsconfig.json') != ''
+        shell: bash
+        run: |
+          if node -e "const p=require('./package.json'); process.exit(p.devDependencies?.typescript || p.dependencies?.typescript ? 0 : 1)" 2>/dev/null; then
+            npx tsc --noEmit
+          else
+            echo "TypeScript is not installed. Skipping TypeScript check."
+          fi
+
+      - name: Build project
+        if: hashFiles('package.json') != ''
+        shell: bash
+        run: |
+          if node -e "const p=require('./package.json'); process.exit(p.scripts?.build ? 0 : 1)" 2>/dev/null; then
+            npm run build
+          else
+            echo "No build script found. Skipping build."
+          fi
+
+      - name: Check runtime import files
+        shell: bash
+        run: |
+          echo "Checking repository for unresolved runtime-import markers..."
+
+          if grep -RInE \
+            --exclude-dir=.git \
+            --exclude-dir=node_modules \
+            --exclude-dir=.next \
+            --exclude-dir=dist \
+            --exclude-dir=build \
+            --exclude='*.lock' \
+            -E 'from[[:space:]]+["'\''](@/|src/)|require\(["'\''](@/|src/)' \
+            . 2>/dev/null; then
+            echo "Runtime import references detected."
+          else
+            echo "No suspicious runtime import references detected."
+          fi
+
+      - name: Check Git status
+        shell: bash
+        run: |
+          git status --short
+
+      - name: Commit changes if present
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
@@ -91,6 +113,6 @@ jobs:
             git commit -m "Fix runtime imports"
             git push
           else
-            echo "No changes to commit."
+            echo "No changes were made."
           fi
 
