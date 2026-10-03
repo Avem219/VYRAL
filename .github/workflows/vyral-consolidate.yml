@@ -1,0 +1,186 @@
+name: VYRAL Consolidate, Verify & Package
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit_changes:
+        description: "Commit the unpacked ZIP changes back to main"
+        required: true
+        default: false
+        type: boolean
+      zip_path:
+        description: "Path to the uploaded ZIP in the repository"
+        required: true
+        default: "VYRAL_consolidated_full_build.zip"
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: vyral-consolidation
+  cancel-in-progress: false
+
+jobs:
+  consolidate:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: vyral
+          POSTGRES_PASSWORD: vyral
+          POSTGRES_DB: vyral_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vyral -d vyral_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://vyral:vyral@localhost:5432/vyral_test
+      DIRECT_URL: postgresql://vyral:vyral@localhost:5432/vyral_test
+      NODE_ENV: test
+      AUTH_SECRET: github-actions-test-secret
+      STORAGE_PROVIDER: local
+      STORAGE_LOCAL_DIR: ./storage-test
+      NEXT_TELEMETRY_DISABLED: 1
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Locate uploaded ZIP
+        id: locate_zip
+        shell: bash
+        run: |
+          set -euo pipefail
+          ZIP="${{ inputs.zip_path }}"
+          if [[ ! -f "$ZIP" ]]; then
+            echo "::error::ZIP not found at $ZIP"
+            find . -maxdepth 3 -type f \( -iname '*.zip' -o -iname '*.ZIP' \) -print
+            exit 1
+          fi
+          echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
+
+      - name: Unpack uploaded ZIP
+        id: unpack
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf _vyral_zip
+          mkdir -p _vyral_zip
+          unzip -q "${{ steps.locate_zip.outputs.zip }}" -d _vyral_zip
+
+          ROOT="_vyral_zip"
+          dirs=$(find "$ROOT" -mindepth 1 -maxdepth 1 -type d | wc -l)
+          files=$(find "$ROOT" -mindepth 1 -maxdepth 1 -type f | wc -l)
+
+          if [[ "$dirs" == "1" && "$files" == "0" ]]; then
+            candidate=$(find "$ROOT" -mindepth 1 -maxdepth 1 -type d -print -quit)
+            if [[ -f "$candidate/package.json" ]]; then ROOT="$candidate"; fi
+          fi
+
+          test -f "$ROOT/package.json"
+          echo "root=$ROOT" >> "$GITHUB_OUTPUT"
+
+      - name: Consolidate ZIP into repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="${{ steps.unpack.outputs.root }}"
+
+          find . -mindepth 1 -maxdepth 1             ! -name ".git"             ! -name ".github"             ! -name "${{ inputs.zip_path }}"             ! -name "_vyral_zip"             -exec rm -rf {} +
+
+          cp -a "$ROOT"/. .
+          rm -rf _vyral_zip
+
+          test -f package.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Apply isolated database migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          if npm run | grep -qE '(^|[[:space:]])db:migrate($|[[:space:]])'; then
+            npm run db:migrate
+          elif npm run | grep -qE '(^|[[:space:]])migrate($|[[:space:]])'; then
+            npm run migrate
+          elif [[ -f drizzle.config.ts || -f drizzle.config.js ]]; then
+            npx drizzle-kit migrate
+          else
+            echo "No migration command detected; continuing."
+          fi
+
+      - name: Typecheck
+        run: npm run typecheck --if-present
+
+      - name: Lint
+        run: npm run lint --if-present
+
+      - name: Tests
+        run: npm test --if-present
+
+      - name: Production build
+        run: npm run build
+
+      - name: Refuse secret files
+        shell: bash
+        run: |
+          set -euo pipefail
+          if find . -type f \( -name '.env' -o -name '.env.*' \)             ! -path './node_modules/*'             ! -path './.git/*'             ! -path './.next/*'             -print -quit | grep -q .; then
+            echo "::error::Environment file detected. Refusing to package."
+            exit 1
+          fi
+
+      - name: Package verified VYRAL source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf _package
+          mkdir -p _package
+          rsync -a             --exclude='.git/'             --exclude='node_modules/'             --exclude='.next/'             --exclude='_package/'             --exclude='_vyral_zip/'             --exclude='*.zip'             --exclude='.env'             --exclude='.env.*'             ./ _package/VYRAL/
+
+          cd _package
+          zip -qr ../VYRAL-production-source.zip VYRAL
+
+      - name: Upload verified ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: VYRAL-production-source
+          path: VYRAL-production-source.zip
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Commit consolidated source
+        if: ${{ inputs.commit_changes }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          rm -f "${{ inputs.zip_path }}"
+          rm -rf _package storage-test
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "No source changes to commit."
+            exit 0
+          fi
+
+          git commit -m "Consolidate VYRAL build from uploaded ZIP"
+          git push origin HEAD:main
