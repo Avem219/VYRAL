@@ -81,7 +81,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
 
 
       - name: Show environment
@@ -234,7 +233,7 @@ jobs:
             echo "package-lock.json found."
           else
             echo "No package-lock.json found."
-            echo "npm install will generate one."
+            echo "npm install will be used."
           fi
 
           if [[ -f "$ROOT/drizzle.config.ts" || -f "$ROOT/drizzle.config.js" ]]; then
@@ -382,10 +381,10 @@ jobs:
 
 
       # ============================================================
-      # INITIALIZE POSTGRESQL TEST ROLE
+      # VERIFY POSTGRESQL SERVICE
       # ============================================================
 
-      - name: Initialize PostgreSQL test credentials
+      - name: Verify PostgreSQL service
         shell: bash
         run: |
           set -euo pipefail
@@ -408,44 +407,42 @@ jobs:
           echo "$CONTAINER_ID"
 
           echo
-          echo "Verifying VYRAL PostgreSQL role..."
+          echo "Checking PostgreSQL service..."
 
           docker exec \
             "$CONTAINER_ID" \
             psql \
             -U vyral \
-            -d postgres \
+            -d vyral_test \
             -c "SELECT current_user, current_database();"
 
           echo
-          echo "Ensuring VYRAL test role has the expected password..."
+          echo "Checking PostgreSQL role..."
 
           docker exec \
             "$CONTAINER_ID" \
             psql \
             -U vyral \
             -d postgres \
-            -c "ALTER ROLE vyral WITH PASSWORD 'vyral';"
+            -c "
+              SELECT
+                rolname,
+                rolsuper,
+                rolcreatedb,
+                rolcanlogin
+              FROM pg_roles
+              WHERE rolname = 'vyral';
+            "
 
           echo
-          echo "Ensuring VYRAL can create isolated test databases..."
-
-          docker exec \
-            "$CONTAINER_ID" \
-            psql \
-            -U vyral \
-            -d postgres \
-            -c "ALTER ROLE vyral CREATEDB;"
-
-          echo
-          echo "PostgreSQL test credentials initialized successfully."
+          echo "PostgreSQL service is ready."
 
 
       # ============================================================
-      # VERIFY POSTGRES
+      # VERIFY APPLICATION DATABASE CONNECTION
       # ============================================================
 
-      - name: Verify PostgreSQL connection
+      - name: Verify application database connection
         shell: bash
         run: |
           set -euo pipefail
@@ -483,7 +480,7 @@ jobs:
           })().catch((error) => {
 
             console.error(
-              "PostgreSQL connection failed:"
+              "PostgreSQL application connection failed:"
             );
 
             console.error(error);
@@ -521,7 +518,8 @@ jobs:
                 current_user AS user,
                 current_database() AS database,
                 rolsuper,
-                rolcreatedb
+                rolcreatedb,
+                rolcanlogin
               FROM pg_roles
               WHERE rolname = current_user
             `);
@@ -532,10 +530,17 @@ jobs:
             console.log("Database:", row.database);
             console.log("Superuser:", row.rolsuper);
             console.log("Can create databases:", row.rolcreatedb);
+            console.log("Can login:", row.rolcanlogin);
 
             if (!row.rolcreatedb) {
               throw new Error(
                 "VYRAL PostgreSQL role cannot create test databases."
+              );
+            }
+
+            if (!row.rolcanlogin) {
+              throw new Error(
+                "VYRAL PostgreSQL role cannot login."
               );
             }
 
@@ -897,9 +902,9 @@ jobs:
           echo "✓ ZIP extracted"
           echo "✓ Source consolidated"
           echo "✓ Dependencies installed"
+          echo "✓ PostgreSQL service verified"
           echo "✓ PostgreSQL role verified"
-          echo "✓ PostgreSQL credentials initialized"
-          echo "✓ PostgreSQL connection verified"
+          echo "✓ PostgreSQL application connection verified"
           echo "✓ PostgreSQL test-database access verified"
           echo "✓ Database migration stage completed"
           echo "✓ Typecheck completed"
