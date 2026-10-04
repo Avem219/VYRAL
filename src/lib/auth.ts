@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
-import { db, schema } from "@/db";
+import { db, schema } from "../db";
 import { eq, and, isNull, gt } from "drizzle-orm";
 import crypto from "crypto";
 
