@@ -1,0 +1,14 @@
+node_modules
+.next
+.git
+.github
+e2e
+coverage
+.env
+.env.*
+*.log
+*.db
+*.db-shm
+*.db-wal
+.data
+.DS_Store
