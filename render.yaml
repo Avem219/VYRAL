@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: vyral
+    runtime: node
+    branch: main
+
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+
+    healthCheckPath: /api/health
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      - key: PORT
+        value: "10000"
+
+      - key: DATABASE_URL
+        sync: false
+
+      - key: DATABASE_ADMIN_URL
+        sync: false
+
+      - key: SESSION_SECRET
+        sync: false
+
+      - key: NEXT_PUBLIC_APP_URL
+        sync: false
+
+      - key: SPOTIFY_CLIENT_ID
+        sync: false
+
+      - key: SPOTIFY_CLIENT_SECRET
+        sync: false
