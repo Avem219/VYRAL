@@ -81,6 +81,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
 
 
       - name: Show environment
@@ -337,12 +338,9 @@ jobs:
           )
 
           if [[ "$FOUND_SECRET" -ne 0 ]]; then
-
             echo
             echo "Remove production environment files before packaging."
-
             exit 1
-
           fi
 
           echo "No secret environment files detected."
@@ -384,7 +382,7 @@ jobs:
 
 
       # ============================================================
-      # FIX TEST POSTGRES PASSWORD
+      # INITIALIZE POSTGRESQL TEST ROLE
       # ============================================================
 
       - name: Initialize PostgreSQL test credentials
@@ -409,12 +407,35 @@ jobs:
           echo "PostgreSQL container:"
           echo "$CONTAINER_ID"
 
+          echo
+          echo "Verifying VYRAL PostgreSQL role..."
+
           docker exec \
             "$CONTAINER_ID" \
             psql \
-            -U postgres \
+            -U vyral \
             -d postgres \
-            -c "ALTER USER vyral WITH PASSWORD 'vyral';"
+            -c "SELECT current_user, current_database();"
+
+          echo
+          echo "Ensuring VYRAL test role has the expected password..."
+
+          docker exec \
+            "$CONTAINER_ID" \
+            psql \
+            -U vyral \
+            -d postgres \
+            -c "ALTER ROLE vyral WITH PASSWORD 'vyral';"
+
+          echo
+          echo "Ensuring VYRAL can create isolated test databases..."
+
+          docker exec \
+            "$CONTAINER_ID" \
+            psql \
+            -U vyral \
+            -d postgres \
+            -c "ALTER ROLE vyral CREATEDB;"
 
           echo
           echo "PostgreSQL test credentials initialized successfully."
@@ -463,6 +484,67 @@ jobs:
 
             console.error(
               "PostgreSQL connection failed:"
+            );
+
+            console.error(error);
+
+            process.exit(1);
+
+          });
+
+          NODE
+
+
+      # ============================================================
+      # VERIFY TEST DATABASE ADMIN ACCESS
+      # ============================================================
+
+      - name: Verify PostgreSQL test database administration
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          node <<'NODE'
+
+          const { Client } = require("pg");
+
+          const client = new Client({
+            connectionString: process.env.TEST_DATABASE_ADMIN_URL,
+          });
+
+          (async () => {
+
+            await client.connect();
+
+            const result = await client.query(`
+              SELECT
+                current_user AS user,
+                current_database() AS database,
+                rolsuper,
+                rolcreatedb
+              FROM pg_roles
+              WHERE rolname = current_user
+            `);
+
+            const row = result.rows[0];
+
+            console.log("Admin user:", row.user);
+            console.log("Database:", row.database);
+            console.log("Superuser:", row.rolsuper);
+            console.log("Can create databases:", row.rolcreatedb);
+
+            if (!row.rolcreatedb) {
+              throw new Error(
+                "VYRAL PostgreSQL role cannot create test databases."
+              );
+            }
+
+            await client.end();
+
+          })().catch((error) => {
+
+            console.error(
+              "PostgreSQL administration check failed:"
             );
 
             console.error(error);
@@ -815,8 +897,10 @@ jobs:
           echo "✓ ZIP extracted"
           echo "✓ Source consolidated"
           echo "✓ Dependencies installed"
+          echo "✓ PostgreSQL role verified"
           echo "✓ PostgreSQL credentials initialized"
           echo "✓ PostgreSQL connection verified"
+          echo "✓ PostgreSQL test-database access verified"
           echo "✓ Database migration stage completed"
           echo "✓ Typecheck completed"
           echo "✓ Lint completed"
