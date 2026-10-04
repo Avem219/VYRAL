@@ -1,0 +1,505 @@
+import {
+  sqliteTable,
+  text,
+  integer,
+  uniqueIndex,
+  index,
+} from "drizzle-orm/sqlite-core";
+import { sql } from "drizzle-orm";
+
+const id = () =>
+  text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID());
+
+const timestamps = {
+  createdAt: text("created_at").notNull().default(sql`(current_timestamp)`),
+  updatedAt: text("updated_at").notNull().default(sql`(current_timestamp)`),
+};
+
+/* ---------------------------------- IDENTITY ---------------------------------- */
+
+export const users = sqliteTable(
+  "users",
+  {
+    id: id(),
+    email: text("email").notNull(),
+    username: text("username").notNull(),
+    passwordHash: text("password_hash").notNull(),
+    role: text("role").notNull().default("user"), // user | moderator | admin
+    suspendedAt: text("suspended_at"),
+    emailVerifiedAt: text("email_verified_at"),
+    ...timestamps,
+  },
+  (t) => ({
+    emailIdx: uniqueIndex("users_email_idx").on(t.email),
+    usernameIdx: uniqueIndex("users_username_idx").on(t.username),
+  })
+);
+
+export const sessions = sqliteTable(
+  "sessions",
+  {
+    id: id(),
+    userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull(),
+    userAgent: text("user_agent"),
+    expiresAt: text("expires_at").notNull(),
+    revokedAt: text("revoked_at"),
+    ...timestamps,
+  },
+  (t) => ({
+    tokenIdx: uniqueIndex("sessions_token_idx").on(t.tokenHash),
+    userIdx: index("sessions_user_idx").on(t.userId),
+  })
+);
+
+export const profiles = sqliteTable(
+  "profiles",
+  {
+    id: id(),
+    userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    displayName: text("display_name").notNull(),
+    bio: text("bio").default(""),
+    avatarUrl: text("avatar_url"),
+    theme: text("theme").notNull().default("obsidian"), // minimal | obsidian | signal | aerodynamic | immersive
+    accentColor: text("accent_color").notNull().default("#e11d2e"),
+    layout: text("layout"), // JSON-encoded section order/visibility
+    profileMusicUrl: text("profile_music_url"),
+    discoverability: text("discoverability").notNull().default("everyone"), // everyone | connections | discoverable | nobody
+    proximityDiscoverable: integer("proximity_discoverable", { mode: "boolean" }).notNull().default(false),
+    ...timestamps,
+  },
+  (t) => ({
+    userIdx: uniqueIndex("profiles_user_idx").on(t.userId),
+  })
+);
+
+export const interests = sqliteTable(
+  "interests",
+  {
+    id: id(),
+    userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    label: text("label").notNull(),
+  },
+  (t) => ({ userIdx: index("interests_user_idx").on(t.userId) })
+);
+
+export const socialLinks = sqliteTable(
+  "social_links",
+  {
+    id: id(),
+    userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    platform: text("platform").notNull(),
+    url: text("url").notNull(),
+    visibility: text("visibility").notNull().default("everyone"),
+  },
+  (t) => ({ userIdx: index("social_links_user_idx").on(t.userId) })
+);
+
+/* ------------------------------- SOCIAL GRAPH ------------------------------- */
+
+export const follows = sqliteTable(
+  "follows",
+  {
+    id: id(),
+    followerId: text("follower_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    followingId: text("following_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    ...timestamps,
+  },
+  (t) => ({
+    pairIdx: uniqueIndex("follows_pair_idx").on(t.followerId, t.followingId),
+    followingIdx: index("follows_following_idx").on(t.followingId),
+  })
+);
+
+export const connections = sqliteTable(
+  "connections",
+  {
+    id: id(),
+    requesterId: text("requester_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    addresseeId: text("addressee_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    status: text("status").notNull().default("pending"), // pending | accepted | declined
+    ...timestamps,
+  },
+  (t) => ({
+    pairIdx: uniqueIndex("connections_pair_idx").on(t.requesterId, t.addresseeId),
+  })
+);
+
+export const blocks = sqliteTable(
+  "blocks",
+  {
+    id: id(),
+    blockerId: text("blocker_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    blockedId: text("blocked_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    ...timestamps,
+  },
+  (t) => ({ pairIdx: uniqueIndex("blocks_pair_idx").on(t.blockerId, t.blockedId) })
+);
+
+export const mutes = sqliteTable(
+  "mutes",
+  {
+    id: id(),
+    muterId: text("muter_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    mutedId: text("muted_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    ...timestamps,
+  },
+  (t) => ({ pairIdx: uniqueIndex("mutes_pair_idx").on(t.muterId, t.mutedId) })
+);
+
+export const circles = sqliteTable(
+  "circles",
+  {
+    id: id(),
+    ownerId: text("owner_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    ...timestamps,
+  },
+  (t) => ({ ownerIdx: index("circles_owner_idx").on(t.ownerId) })
+);
+
+export const circleMembers = sqliteTable(
+  "circle_members",
+  {
+    id: id(),
+    circleId: text("circle_id").notNull().references(() => circles.id, { onDelete: "cascade" }),
+    memberId: text("member_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  },
+  (t) => ({ pairIdx: uniqueIndex("circle_members_pair_idx").on(t.circleId, t.memberId) })
+);
+
+/* ---------------------------------- CONTENT ---------------------------------- */
+
+export const posts = sqliteTable(
+  "posts",
+  {
+    id: id(),
+    authorId: text("author_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull().default("text"), // text | photo | video | carousel | music | project | poll
+    body: text("body"),
+    mediaJson: text("media_json"), // JSON array of media.id values (resolved to URLs via the storage provider)
+    audience: text("audience").notNull().default("everyone"),
+    ...timestamps,
+  },
+  (t) => ({ authorIdx: index("posts_author_idx").on(t.authorId) })
+);
+
+export const comments = sqliteTable(
+  "comments",
+  {
+    id: id(),
+    postId: text("post_id").notNull().references(() => posts.id, { onDelete: "cascade" }),
+    authorId: text("author_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    parentId: text("parent_id"),
+    body: text("body").notNull(),
+    ...timestamps,
+  },
+  (t) => ({ postIdx: index("comments_post_idx").on(t.postId) })
+);
+
+export const reactions = sqliteTable(
+  "reactions",
+  {
+    id: id(),
+    userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    targetType: text("target_type").notNull(), // post | comment | story | reel
+    targetId: text("target_id").notNull(),
+    kind: text("kind").notNull().default("like"),
+    ...timestamps,
+  },
+  (t) => ({
+    uniqIdx: uniqueIndex("reactions_uniq_idx").on(t.userId, t.targetType, t.targetId, t.kind),
+    targetIdx: index("reactions_target_idx").on(t.targetType, t.targetId),
+  })
+);
+
+export const saves = sqliteTable(
+  "saves",
+  {
+    id: id(),
+    userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    targetType: text("target_type").notNull(),
+    targetId: text("target_id").notNull(),
+    collectionId: text("collection_id"),
+    ...timestamps,
+  },
+  (t) => ({ userIdx: index("saves_user_idx").on(t.userId) })
+);
+
+export const collections = sqliteTable(
+  "collections",
+  {
+    id: id(),
+    userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    isPrivate: integer("is_private", { mode: "boolean" }).notNull().default(true),
+    ...timestamps,
+  },
+  (t) => ({ userIdx: index("collections_user_idx").on(t.userId) })
+);
+
+export const stories = sqliteTable(
+  "stories",
+  {
+    id: id(),
+    authorId: text("author_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull().default("photo"), // photo | video | text
+    mediaId: text("media_id").references(() => media.id, { onDelete: "set null" }),
+    body: text("body"),
+    audience: text("audience").notNull().default("everyone"), // everyone | connections | circle
+    circleId: text("circle_id").references(() => circles.id, { onDelete: "set null" }),
+    expiresAt: text("expires_at").notNull(),
+    ...timestamps,
+  },
+  (t) => ({ authorIdx: index("stories_author_idx").on(t.authorId) })
+);
+
+export const storyViews = sqliteTable(
+  "story_views",
+  {
+    id: id(),
+    storyId: text("story_id").notNull().references(() => stories.id, { onDelete: "cascade" }),
+    viewerId: text("viewer_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    viewedAt: text("viewed_at").notNull().default(sql`(current_timestamp)`),
+  },
+  (t) => ({ pairIdx: uniqueIndex("story_views_pair_idx").on(t.storyId, t.viewerId) })
+);
+
+export const reels = sqliteTable(
+  "reels",
+  {
+    id: id(),
+    authorId: text("author_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    mediaId: text("media_id").notNull().references(() => media.id, { onDelete: "cascade" }),
+    thumbnailMediaId: text("thumbnail_media_id").references(() => media.id, { onDelete: "set null" }),
+    caption: text("caption"),
+    musicTrackId: text("music_track_id"),
+    audience: text("audience").notNull().default("everyone"),
+    ...timestamps,
+  },
+  (t) => ({ authorIdx: index("reels_author_idx").on(t.authorId) })
+);
+
+/* --------------------------------- MESSAGING --------------------------------- */
+
+export const conversations = sqliteTable(
+  "conversations",
+  {
+    id: id(),
+    isGroup: integer("is_group", { mode: "boolean" }).notNull().default(false),
+    title: text("title"),
+    avatarMediaId: text("avatar_media_id"),
+    ...timestamps,
+  }
+);
+
+export const conversationMembers = sqliteTable(
+  "conversation_members",
+  {
+    id: id(),
+    conversationId: text("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    lastReadAt: text("last_read_at"),
+    isRequest: integer("is_request", { mode: "boolean" }).notNull().default(false),
+    isAdmin: integer("is_admin", { mode: "boolean" }).notNull().default(false), // group management rights; irrelevant for direct conversations
+  },
+  (t) => ({
+    pairIdx: uniqueIndex("conversation_members_pair_idx").on(t.conversationId, t.userId),
+    userIdx: index("conversation_members_user_idx").on(t.userId),
+  })
+);
+
+export const messages = sqliteTable(
+  "messages",
+  {
+    id: id(),
+    conversationId: text("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
+    senderId: text("sender_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull().default("text"), // text | image | video | audio | shared_post | shared_reel | shared_profile
+    body: text("body"),
+    mediaId: text("media_id"), // resolved to a URL via getMediaUrl(); access-gated by conversation membership, see media route
+    sharedTargetType: text("shared_target_type"),
+    sharedTargetId: text("shared_target_id"),
+    replyToId: text("reply_to_id"),
+    deliveredAt: text("delivered_at"),
+    ...timestamps,
+  },
+  (t) => ({ convoIdx: index("messages_convo_idx").on(t.conversationId) })
+);
+
+export const messageReactions = sqliteTable(
+  "message_reactions",
+  {
+    id: id(),
+    messageId: text("message_id").notNull().references(() => messages.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    emoji: text("emoji").notNull(),
+  },
+  (t) => ({ uniqIdx: uniqueIndex("message_reactions_uniq_idx").on(t.messageId, t.userId, t.emoji) })
+);
+
+export const presence = sqliteTable(
+  "presence",
+  {
+    userId: text("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+    status: text("status").notNull().default("offline"), // online | away | offline
+    lastSeenAt: text("last_seen_at").notNull().default(sql`(current_timestamp)`),
+  }
+);
+
+/* ----------------------------------- EXPRESS ----------------------------------- */
+/*
+  Express is private-by-construction: rows are only ever queried scoped to
+  (senderId = me OR recipientId = me) — see src/lib/express.ts. There is no
+  public listing endpoint and Express content is excluded from every other
+  domain's queries (feed, search, explore, analytics, notification previews).
+*/
+export const expressMessages = sqliteTable(
+  "express_messages",
+  {
+    id: id(),
+    senderId: text("sender_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    recipientId: text("recipient_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull().default("text"), // text | image | video | audio | music | link
+    body: text("body"),
+    mediaId: text("media_id"),
+    allowReply: integer("allow_reply", { mode: "boolean" }).notNull().default(true),
+    allowForward: integer("allow_forward", { mode: "boolean" }).notNull().default(false),
+    expiresAt: text("expires_at"), // null = never
+    openedAt: text("opened_at"),
+    recalledAt: text("recalled_at"),
+    archivedBySender: integer("archived_by_sender", { mode: "boolean" }).notNull().default(false),
+    archivedByRecipient: integer("archived_by_recipient", { mode: "boolean" }).notNull().default(false),
+    deletedBySender: integer("deleted_by_sender", { mode: "boolean" }).notNull().default(false),
+    deletedByRecipient: integer("deleted_by_recipient", { mode: "boolean" }).notNull().default(false),
+    ...timestamps,
+  },
+  (t) => ({
+    senderIdx: index("express_sender_idx").on(t.senderId),
+    recipientIdx: index("express_recipient_idx").on(t.recipientId),
+  })
+);
+
+export const expressPermissions = sqliteTable(
+  "express_permissions",
+  {
+    userId: text("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+    whoCanSend: text("who_can_send").notNull().default("connections"), // everyone | connections | nobody
+  }
+);
+
+/* -------------------------------- NOTIFICATIONS -------------------------------- */
+
+export const notifications = sqliteTable(
+  "notifications",
+  {
+    id: id(),
+    userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(), // follow | connection | like | comment | mention | message | story | express | system
+    actorId: text("actor_id").references(() => users.id, { onDelete: "cascade" }),
+    targetType: text("target_type"),
+    targetId: text("target_id"),
+    // Deliberately no content preview for kind = 'express'; see src/lib/notifications.ts
+    readAt: text("read_at"),
+    ...timestamps,
+  },
+  (t) => ({ userIdx: index("notifications_user_idx").on(t.userId) })
+);
+
+/* ----------------------------------- MUSIC ----------------------------------- */
+
+export const tracks = sqliteTable(
+  "tracks",
+  {
+    id: id(),
+    title: text("title").notNull(),
+    artist: text("artist").notNull(),
+    provider: text("provider").notNull().default("external"), // licensed provider key
+    externalUrl: text("external_url").notNull(),
+    ...timestamps,
+  }
+);
+
+/* ----------------------------------- MEDIA ----------------------------------- */
+/*
+  Provider-agnostic media record. `provider` + `storageKey` let the actual
+  bytes live anywhere (local disk in dev, S3/R2/Supabase Storage in
+  production) behind the interface in src/lib/storage.ts. Nothing else in
+  the app should construct storage paths directly — always go through
+  getMediaUrl()/the storage provider so swapping providers is a one-file
+  change.
+*/
+export const media = sqliteTable(
+  "media",
+  {
+    id: id(),
+    ownerId: text("owner_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull().default("local"), // local | s3 | r2 | supabase
+    storageKey: text("storage_key").notNull(),
+    mimeType: text("mime_type").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    kind: text("kind").notNull(), // image | video | audio
+    status: text("status").notNull().default("ready"), // pending | ready | failed
+    isPrivate: integer("is_private", { mode: "boolean" }).notNull().default(false),
+    ...timestamps,
+  },
+  (t) => ({ ownerIdx: index("media_owner_idx").on(t.ownerId) })
+);
+
+/* --------------------------------- ADMIN/AUDIT --------------------------------- */
+
+export const auditLog = sqliteTable(
+  "audit_log",
+  {
+    id: id(),
+    actorId: text("actor_id").references(() => users.id, { onDelete: "set null" }),
+    action: text("action").notNull(),
+    targetType: text("target_type"),
+    targetId: text("target_id"),
+    metadata: text("metadata"), // JSON
+    createdAt: text("created_at").notNull().default(sql`(current_timestamp)`),
+  },
+  (t) => ({ actorIdx: index("audit_log_actor_idx").on(t.actorId) })
+);
+
+/* --------------------------------- ANALYTICS --------------------------------- */
+
+export const profileViews = sqliteTable(
+  "profile_views",
+  {
+    id: id(),
+    profileUserId: text("profile_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    viewerId: text("viewer_id").references(() => users.id, { onDelete: "set null" }),
+    viewedAt: text("viewed_at").notNull().default(sql`(current_timestamp)`),
+  },
+  (t) => ({ profileIdx: index("profile_views_profile_idx").on(t.profileUserId) })
+);
+
+export const contentViews = sqliteTable(
+  "content_views",
+  {
+    id: id(),
+    targetType: text("target_type").notNull(), // post | story | reel
+    targetId: text("target_id").notNull(),
+    viewerId: text("viewer_id").references(() => users.id, { onDelete: "set null" }),
+    viewedAt: text("viewed_at").notNull().default(sql`(current_timestamp)`),
+  },
+  (t) => ({ targetIdx: index("content_views_target_idx").on(t.targetType, t.targetId) })
+);
+
+/* --------------------------------- MODERATION --------------------------------- */
+
+export const reports = sqliteTable(
+  "reports",
+  {
+    id: id(),
+    reporterId: text("reporter_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    targetType: text("target_type").notNull(),
+    targetId: text("target_id").notNull(),
+    reason: text("reason").notNull(),
+    status: text("status").notNull().default("open"), // open | reviewed | actioned | dismissed
+    ...timestamps,
+  }
+);

@@ -1,0 +1,275 @@
+@import "tailwindcss";
+
+:root {
+  --vy-void: #0a0b0d;        /* base background */
+  --vy-obsidian: #101114;    /* raised surface */
+  --vy-graphite: #16171b;    /* panel surface */
+  --vy-charcoal: #24262b;    /* borders / dividers */
+  --vy-steel: #7a8188;       /* muted text */
+  --vy-off-white: #eef1f4;   /* primary text */
+  --vy-crimson: #5aa9e6;     /* primary accent: metallic tech-blue (name kept for compatibility with existing utility classes) */
+  --vy-crimson-dim: #3d7bb0; /* pressed / muted accent */
+  --vy-chrome: #b8c2cc;      /* brushed-metal highlight */
+  --vy-danger: #e0475a;      /* destructive/alert red, distinct from the brand accent */
+  --vy-signal-blue: #5aa9e6;
+  --vy-signal-green: #3ecf6e;
+  --vy-signal-amber: #e3a635;
+  --vy-violet: #8b6bff;
+
+  --background: var(--vy-void);
+  --foreground: var(--vy-off-white);
+}
+
+@theme inline {
+  --color-void: var(--vy-void);
+  --color-obsidian: var(--vy-obsidian);
+  --color-graphite: var(--vy-graphite);
+  --color-charcoal: var(--vy-charcoal);
+  --color-steel: var(--vy-steel);
+  --color-offwhite: var(--vy-off-white);
+  --color-crimson: var(--vy-crimson);
+  --color-crimson-dim: var(--vy-crimson-dim);
+  --color-signal-blue: var(--vy-signal-blue);
+  --color-signal-green: var(--vy-signal-green);
+  --color-signal-amber: var(--vy-signal-amber);
+  --color-violet: var(--vy-violet);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: ui-sans-serif, "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  letter-spacing: -0.011em;
+  -webkit-font-smoothing: antialiased;
+  position: relative;
+}
+
+/* Ambient depth behind the glass surfaces — subtle, fixed, never scrolls
+   with content. This is what makes translucent panels read as "glass"
+   rather than just semi-transparent gray. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(ellipse 900px 600px at 15% -10%, rgba(90, 169, 230, 0.12), transparent 60%),
+    radial-gradient(ellipse 700px 500px at 100% 20%, rgba(139, 107, 255, 0.06), transparent 55%),
+    radial-gradient(ellipse 800px 700px at 50% 110%, rgba(90, 169, 230, 0.08), transparent 60%);
+  pointer-events: none;
+}
+
+/* Chamfered corner — the platform's signature shape device. Used sparingly
+   on primary surfaces (nav rail, primary buttons, identity cards), not on
+   every rectangle in the UI. */
+.vy-chamfer {
+  clip-path: polygon(
+    14px 0,
+    100% 0,
+    100% calc(100% - 14px),
+    calc(100% - 14px) 100%,
+    0 100%,
+    0 14px
+  );
+}
+.vy-chamfer-sm {
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+}
+
+/* Glass surface: the primary panel treatment across the app. Translucent,
+   blurred backdrop over the ambient glow, with a soft inner highlight and
+   outer shadow so it reads as an elevated pane of glass rather than a flat
+   gray card. Falls back gracefully to a solid panel on browsers/contexts
+   without backdrop-filter support. */
+.vy-panel {
+  background: rgba(23, 23, 27, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 8px 24px rgba(0, 0, 0, 0.35);
+}
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .vy-panel {
+    backdrop-filter: blur(20px) saturate(140%);
+    -webkit-backdrop-filter: blur(20px) saturate(140%);
+  }
+}
+
+/* Stronger blur variant for chrome that sits above scrolling content
+   (nav rail, mobile nav, modals) — needs more opacity to stay legible. */
+.vy-glass-strong {
+  background: rgba(10, 10, 12, 0.72);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .vy-glass-strong {
+    backdrop-filter: blur(24px) saturate(150%);
+    -webkit-backdrop-filter: blur(24px) saturate(150%);
+  }
+}
+
+.vy-hairline {
+  border-color: var(--vy-charcoal);
+}
+
+::selection {
+  background: var(--vy-crimson);
+  color: white;
+}
+
+.vy-input {
+  width: 100%;
+  background: rgba(16, 16, 19, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--vy-off-white);
+  padding: 0.6rem 0.75rem;
+  font-size: 0.875rem;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+.vy-input:focus-visible {
+  border-color: var(--vy-crimson);
+}
+
+.vy-btn-primary {
+  background: var(--vy-crimson);
+  color: white;
+  font-size: 0.875rem;
+  font-weight: 600;
+  padding: 0.65rem 1rem;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.2) inset, 0 4px 12px rgba(90, 169, 230, 0.25);
+}
+.vy-btn-primary:hover:not(:disabled) {
+  background: var(--vy-crimson-dim);
+}
+.vy-btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.vy-btn-secondary {
+  background: rgba(23, 23, 27, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--vy-off-white);
+  font-size: 0.875rem;
+  font-weight: 500;
+  padding: 0.6rem 1rem;
+  transition: border-color 0.15s ease;
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+}
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .vy-btn-secondary {
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+}
+.vy-btn-secondary:hover:not(:disabled) {
+  border-color: var(--vy-crimson);
+}
+.vy-btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* --- Color mode (light / dark / system) ------------------------------------
+   Independent of the accent-color profile themes. Defaults to dark; applied
+   via data-mode on <html> by src/components/color-mode-script.tsx before
+   first paint to avoid a flash. */
+:root[data-mode="light"] {
+  --vy-void: #f4f5f7;
+  --vy-obsidian: #ffffff;
+  --vy-graphite: #ffffff;
+  --vy-charcoal: #e2e4e8;
+  --vy-steel: #6b7280;
+  --vy-off-white: #111318;
+  color-scheme: light;
+}
+:root[data-mode="light"] body::before { opacity: 0.5; }
+:root[data-mode="light"] .vy-panel {
+  background: rgba(255, 255, 255, 0.65);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+:root[data-mode="light"] .vy-glass-strong {
+  background: rgba(255, 255, 255, 0.78);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+:root[data-mode="light"] .vy-input {
+  background: rgba(255, 255, 255, 0.85);
+  border-color: rgba(0, 0, 0, 0.1);
+  color: var(--vy-off-white);
+}
+:root[data-mode="light"] .vy-btn-secondary {
+  background: rgba(255, 255, 255, 0.65);
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+/* --- Profile themes -------------------------------------------------------
+   Selected in Settings, persisted on the profile, applied here via
+   data-theme on <html> (see src/components/auth-context.tsx). Each theme
+   restyles the accent color and ambient glow, not the whole layout system —
+   the chamfered-glass identity stays constant across all of them. */
+
+:root[data-theme="signal"] {
+  --vy-crimson: var(--vy-signal-blue);
+  --vy-crimson-dim: #2c4d99;
+}
+:root[data-theme="signal"] body::before {
+  background:
+    radial-gradient(ellipse 900px 600px at 15% -10%, rgba(74, 125, 255, 0.16), transparent 60%),
+    radial-gradient(ellipse 700px 500px at 100% 20%, rgba(139, 107, 255, 0.1), transparent 55%),
+    radial-gradient(ellipse 800px 700px at 50% 110%, rgba(74, 125, 255, 0.1), transparent 60%);
+}
+
+:root[data-theme="immersive"] body::before {
+  background:
+    radial-gradient(ellipse 1000px 700px at 15% -10%, rgba(90, 169, 230, 0.2), transparent 62%),
+    radial-gradient(ellipse 800px 600px at 100% 15%, rgba(139, 107, 255, 0.16), transparent 58%),
+    radial-gradient(ellipse 900px 800px at 50% 110%, rgba(90, 169, 230, 0.16), transparent 62%);
+}
+:root[data-theme="immersive"] .vy-btn-primary {
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.25) inset, 0 6px 20px rgba(90, 169, 230, 0.4);
+}
+
+:root[data-theme="minimal"] body::before {
+  background: none;
+}
+:root[data-theme="minimal"] .vy-panel {
+  background: rgba(23, 23, 27, 0.85);
+  box-shadow: none;
+}
+:root[data-theme="minimal"] .vy-btn-primary {
+  box-shadow: none;
+}
+
+:root[data-theme="aerodynamic"] .vy-panel,
+:root[data-theme="aerodynamic"] .vy-btn-secondary {
+  clip-path: polygon(20px 0, 100% 0, 100% calc(100% - 20px), calc(100% - 20px) 100%, 0 100%, 0 20px);
+}
