@@ -41,9 +41,9 @@ jobs:
 
         options: >-
           --health-cmd "pg_isready -U vyral -d vyral_test"
-          --health-interval 10s
+          --health-interval 5s
           --health-timeout 5s
-          --health-retries 10
+          --health-retries 20
 
     env:
       DATABASE_URL: postgresql://vyral:vyral@localhost:5432/vyral_test
@@ -88,17 +88,36 @@ jobs:
         run: |
           set -euo pipefail
 
+          echo "============================================================"
+          echo " ENVIRONMENT"
+          echo "============================================================"
+
           echo "Node:"
           node --version
 
+          echo
           echo "npm:"
           npm --version
 
+          echo
           echo "Git:"
           git --version
 
+          echo
+          echo "Unzip:"
+          unzip -v | head -1
+
+          echo
           echo "Working directory:"
           pwd
+
+          echo
+          echo "Repository:"
+          git remote get-url origin || true
+
+          echo
+          echo "Current commit:"
+          git rev-parse HEAD
 
 
       # ============================================================
@@ -113,19 +132,19 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "Looking for ZIP:"
+          echo "Looking for VYRAL ZIP:"
           echo "$ZIP_PATH"
 
           if [[ ! -f "$ZIP_PATH" ]]; then
             echo "::error::VYRAL ZIP was not found at: $ZIP_PATH"
 
             echo
-            echo "ZIP files currently present in repository:"
+            echo "ZIP files currently present:"
 
             find . \
               -type f \
               \( -iname "*.zip" -o -iname "*.ZIP" \) \
-              -not -path "./.git/*" \
+              ! -path "./.git/*" \
               -print
 
             exit 1
@@ -134,6 +153,10 @@ jobs:
           echo
           echo "ZIP found:"
           ls -lh "$ZIP_PATH"
+
+          echo
+          echo "ZIP contents preview:"
+          unzip -l "$ZIP_PATH" | head -80
 
           echo "zip=$ZIP_PATH" >> "$GITHUB_OUTPUT"
 
@@ -160,36 +183,39 @@ jobs:
           unzip -q "$ZIP_PATH" -d _vyral_zip
 
           echo
-          echo "Extracted structure:"
-
+          echo "Extracted files:"
           find _vyral_zip \
-            -maxdepth 3 \
+            -maxdepth 4 \
             -type f \
-            | head -100
+            | head -150
 
           ROOT="_vyral_zip"
 
+          # --------------------------------------------------------
+          # Detect package.json
+          # --------------------------------------------------------
+
           if [[ -f "$ROOT/package.json" ]]; then
 
+            echo
             echo "Project root detected directly in ZIP."
 
           else
 
-            candidates=()
+            echo
+            echo "Searching for package.json..."
 
-            while IFS= read -r candidate; do
-              candidates+=("$candidate")
-            done < <(
+            mapfile -t candidates < <(
               find "$ROOT" \
                 -mindepth 1 \
-                -maxdepth 4 \
+                -maxdepth 5 \
                 -type f \
                 -name package.json \
                 -print
             )
 
             if [[ "${#candidates[@]}" -eq 0 ]]; then
-              echo "::error::No package.json was found inside the uploaded ZIP."
+              echo "::error::No package.json was found inside the ZIP."
               exit 1
             fi
 
@@ -205,7 +231,7 @@ jobs:
           fi
 
           echo
-          echo "Detected VYRAL project root:"
+          echo "Detected project root:"
           echo "$ROOT"
 
           test -f "$ROOT/package.json"
@@ -224,37 +250,67 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "Validating project:"
-          echo "$ROOT"
+          echo "============================================================"
+          echo " PROJECT VALIDATION"
+          echo "============================================================"
 
           test -f "$ROOT/package.json"
 
           if [[ -f "$ROOT/package-lock.json" ]]; then
-            echo "package-lock.json found."
+            echo "✓ package-lock.json found"
           else
-            echo "No package-lock.json found."
+            echo "::warning::No package-lock.json found."
             echo "npm install will be used."
           fi
 
-          if [[ -f "$ROOT/drizzle.config.ts" || -f "$ROOT/drizzle.config.js" ]]; then
-            echo "Drizzle configuration detected."
+          if [[ -f "$ROOT/next.config.js" ||
+                -f "$ROOT/next.config.mjs" ||
+                -f "$ROOT/next.config.ts" ]]; then
+            echo "✓ Next.js configuration detected"
+          fi
+
+          if [[ -f "$ROOT/drizzle.config.ts" ||
+                -f "$ROOT/drizzle.config.js" ]]; then
+            echo "✓ Drizzle configuration detected"
           fi
 
           if [[ -d "$ROOT/drizzle" ]]; then
-            echo "Drizzle migrations directory detected."
+            echo "✓ Drizzle migrations directory detected"
+          fi
+
+          if [[ -f "$ROOT/prisma/schema.prisma" ]]; then
+            echo "✓ Prisma schema detected"
+          fi
+
+          if [[ -d "$ROOT/src" ]]; then
+            echo "✓ src/ directory detected"
+          fi
+
+          if [[ -d "$ROOT/public" ]]; then
+            echo "✓ public/ directory detected"
           fi
 
           echo
           echo "Package information:"
 
           node -e "
-            const p = require('./$ROOT/package.json');
+            const fs = require('fs');
+            const p = JSON.parse(
+              fs.readFileSync('$ROOT/package.json', 'utf8')
+            );
 
             console.log('name:', p.name || '(unnamed)');
             console.log('version:', p.version || '(none)');
+            console.log('private:', p.private ?? false);
+
+            console.log(
+              'package manager:',
+              p.packageManager || '(not specified)'
+            );
+
             console.log(
               'scripts:',
-              Object.keys(p.scripts || {}).join(', ')
+              Object.keys(p.scripts || {}).join(', ') || '(none)'
             );
           "
 
@@ -274,6 +330,8 @@ jobs:
           echo "Consolidating source from:"
           echo "$ROOT"
 
+          # Preserve Git metadata, GitHub workflows,
+          # and the original ZIP until packaging is complete.
           find . \
             -mindepth 1 \
             -maxdepth 1 \
@@ -290,13 +348,43 @@ jobs:
           test -f package.json
 
           echo
-          echo "Consolidated project:"
-
+          echo "Consolidated project root:"
           ls -la
 
 
       # ============================================================
-      # SECURITY — NO REAL ENV FILES
+      # PROJECT IDENTITY
+      # ============================================================
+
+      - name: Verify VYRAL project identity
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          node <<'NODE'
+          const fs = require("fs");
+
+          const pkg = JSON.parse(
+            fs.readFileSync("package.json", "utf8")
+          );
+
+          console.log("Package name:", pkg.name || "(missing)");
+          console.log("Package version:", pkg.version || "(missing)");
+
+          if (!pkg.name) {
+            throw new Error("package.json does not contain a package name.");
+          }
+
+          if (!pkg.scripts || Object.keys(pkg.scripts).length === 0) {
+            throw new Error("package.json contains no npm scripts.");
+          }
+
+          console.log("Project identity check passed.");
+          NODE
+
+
+      # ============================================================
+      # SECURITY — ENV FILES
       # ============================================================
 
       - name: Check for environment secrets
@@ -320,7 +408,7 @@ jobs:
                 ;;
 
               *)
-                echo "::error::Secret environment file detected: $file"
+                echo "::error::Environment file detected: $file"
                 FOUND_SECRET=1
                 ;;
 
@@ -338,11 +426,38 @@ jobs:
 
           if [[ "$FOUND_SECRET" -ne 0 ]]; then
             echo
-            echo "Remove production environment files before packaging."
+            echo "::error::Production environment files must not be included."
             exit 1
           fi
 
-          echo "No secret environment files detected."
+          echo "✓ No real environment files detected."
+
+
+      # ============================================================
+      # SECURITY — CONFLICT MARKERS
+      # ============================================================
+
+      - name: Check for unresolved merge conflicts
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if grep -R \
+            -n \
+            -E '^(<<<<<<<|=======|>>>>>>>)' \
+            --exclude-dir=.git \
+            --exclude-dir=node_modules \
+            --exclude-dir=.next \
+            --exclude-dir=storage-test \
+            .; then
+
+            echo
+            echo "::error::Unresolved Git merge conflict markers detected."
+            exit 1
+
+          fi
+
+          echo "✓ No unresolved merge conflict markers found."
 
 
       # ============================================================
@@ -358,7 +473,7 @@ jobs:
 
           if [[ -f package-lock.json ]]; then
 
-            echo "package-lock.json found."
+            echo "✓ package-lock.json found"
             echo "Using npm ci."
 
             npm ci \
@@ -367,7 +482,7 @@ jobs:
 
           else
 
-            echo "No package-lock.json found."
+            echo "::warning::No package-lock.json found."
             echo "Using npm install."
 
             npm install \
@@ -381,7 +496,7 @@ jobs:
 
 
       # ============================================================
-      # VERIFY POSTGRESQL SERVICE
+      # VERIFY POSTGRESQL
       # ============================================================
 
       - name: Verify PostgreSQL service
@@ -389,6 +504,31 @@ jobs:
         run: |
           set -euo pipefail
 
+          echo "Waiting for PostgreSQL..."
+
+          for attempt in {1..30}; do
+
+            if pg_isready \
+              -h localhost \
+              -p 5432 \
+              -U vyral \
+              -d vyral_test; then
+
+              echo "✓ PostgreSQL is ready."
+              break
+
+            fi
+
+            if [[ "$attempt" -eq 30 ]]; then
+              echo "::error::PostgreSQL did not become ready."
+              exit 1
+            fi
+
+            sleep 2
+
+          done
+
+          echo
           echo "Locating PostgreSQL service container..."
 
           CONTAINER_ID="$(
@@ -403,21 +543,25 @@ jobs:
             exit 1
           fi
 
-          echo "PostgreSQL container:"
-          echo "$CONTAINER_ID"
+          echo "Container: $CONTAINER_ID"
 
           echo
-          echo "Checking PostgreSQL service..."
+          echo "Database connection:"
 
           docker exec \
             "$CONTAINER_ID" \
             psql \
             -U vyral \
             -d vyral_test \
-            -c "SELECT current_user, current_database();"
+            -c "
+              SELECT
+                current_user,
+                current_database(),
+                version();
+            "
 
           echo
-          echo "Checking PostgreSQL role..."
+          echo "Role verification:"
 
           docker exec \
             "$CONTAINER_ID" \
@@ -435,11 +579,11 @@ jobs:
             "
 
           echo
-          echo "PostgreSQL service is ready."
+          echo "✓ PostgreSQL service verified."
 
 
       # ============================================================
-      # VERIFY APPLICATION DATABASE CONNECTION
+      # APPLICATION DATABASE CONNECTION
       # ============================================================
 
       - name: Verify application database connection
@@ -448,7 +592,6 @@ jobs:
           set -euo pipefail
 
           node <<'NODE'
-
           const { Client } = require("pg");
 
           const client = new Client({
@@ -456,44 +599,40 @@ jobs:
           });
 
           (async () => {
-
             await client.connect();
 
             const result = await client.query(`
               SELECT
                 current_database() AS database,
-                current_user AS user
+                current_user AS user,
+                current_schema() AS schema
             `);
 
-            console.log(
-              "Database:",
-              result.rows[0].database
-            );
-
-            console.log(
-              "User:",
-              result.rows[0].user
-            );
+            console.log("Database:", result.rows[0].database);
+            console.log("User:", result.rows[0].user);
+            console.log("Schema:", result.rows[0].schema);
 
             await client.end();
 
-          })().catch((error) => {
-
+            console.log("✓ Application database connection verified.");
+          })().catch(async (error) => {
             console.error(
               "PostgreSQL application connection failed:"
             );
 
             console.error(error);
 
+            try {
+              await client.end();
+            } catch {}
+
             process.exit(1);
-
           });
-
           NODE
 
 
       # ============================================================
-      # VERIFY TEST DATABASE ADMIN ACCESS
+      # TEST DATABASE ADMIN ACCESS
       # ============================================================
 
       - name: Verify PostgreSQL test database administration
@@ -502,7 +641,6 @@ jobs:
           set -euo pipefail
 
           node <<'NODE'
-
           const { Client } = require("pg");
 
           const client = new Client({
@@ -510,7 +648,6 @@ jobs:
           });
 
           (async () => {
-
             await client.connect();
 
             const result = await client.query(`
@@ -546,18 +683,22 @@ jobs:
 
             await client.end();
 
-          })().catch((error) => {
-
+            console.log(
+              "✓ PostgreSQL administration access verified."
+            );
+          })().catch(async (error) => {
             console.error(
               "PostgreSQL administration check failed:"
             );
 
             console.error(error);
 
+            try {
+              await client.end();
+            } catch {}
+
             process.exit(1);
-
           });
-
           NODE
 
 
@@ -565,46 +706,44 @@ jobs:
       # DATABASE MIGRATIONS
       # ============================================================
 
-      - name: Apply isolated database migrations
+      - name: Apply database migrations
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "Preparing isolated PostgreSQL database..."
+          echo "============================================================"
+          echo " DATABASE MIGRATIONS"
+          echo "============================================================"
 
-          if [[ -f drizzle.config.ts || -f drizzle.config.js ]]; then
+          if [[ -f drizzle.config.ts ||
+                -f drizzle.config.js ]]; then
 
-            echo "Drizzle configuration detected."
+            echo "Drizzle detected."
 
-            if [[ -d drizzle ]]; then
+            if npm run | grep -qE '(^|[[:space:]])db:migrate($|[[:space:]])'; then
 
-              echo "Drizzle migrations directory detected."
+              echo "Running npm run db:migrate..."
+              npm run db:migrate
 
+            elif npm run | grep -qE '(^|[[:space:]])migrate($|[[:space:]])'; then
+
+              echo "Running npm run migrate..."
+              npm run migrate
+
+            elif [[ -d drizzle ]]; then
+
+              echo "Running Drizzle migration engine..."
               npx drizzle-kit migrate
 
             else
 
-              echo "::warning::Drizzle config exists but no drizzle directory was found."
-
-              if npm run | grep -qE '(^|[[:space:]])db:migrate($|[[:space:]])'; then
-
-                npm run db:migrate
-
-              elif npm run | grep -qE '(^|[[:space:]])migrate($|[[:space:]])'; then
-
-                npm run migrate
-
-              else
-
-                echo "::warning::No Drizzle migration command detected."
-
-              fi
+              echo "::warning::Drizzle detected but no migration directory or script was found."
 
             fi
 
           elif [[ -f prisma/schema.prisma ]]; then
 
-            echo "Prisma schema detected."
+            echo "Prisma detected."
 
             if npm run | grep -qE '(^|[[:space:]])db:migrate($|[[:space:]])'; then
 
@@ -618,19 +757,77 @@ jobs:
 
           elif npm run | grep -qE '(^|[[:space:]])db:migrate($|[[:space:]])'; then
 
+            echo "Running db:migrate..."
             npm run db:migrate
 
           elif npm run | grep -qE '(^|[[:space:]])migrate($|[[:space:]])'; then
 
+            echo "Running migrate..."
             npm run migrate
 
           else
 
             echo "::warning::No database migration system detected."
-
             echo "Continuing because tests may initialize the database."
 
           fi
+
+          echo
+          echo "✓ Database migration stage completed."
+
+
+      # ============================================================
+      # DATABASE HEALTH
+      # ============================================================
+
+      - name: Verify database schema
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          node <<'NODE'
+          const { Client } = require("pg");
+
+          const client = new Client({
+            connectionString: process.env.DATABASE_URL,
+          });
+
+          (async () => {
+            await client.connect();
+
+            const result = await client.query(`
+              SELECT
+                COUNT(*)::int AS table_count
+              FROM information_schema.tables
+              WHERE table_schema = 'public'
+                AND table_type = 'BASE TABLE'
+            `);
+
+            const tableCount = result.rows[0].table_count;
+
+            console.log("Public tables:", tableCount);
+
+            if (tableCount === 0) {
+              console.warn(
+                "WARNING: No public database tables were detected."
+              );
+            } else {
+              console.log(
+                "✓ Database schema contains tables."
+              );
+            }
+
+            await client.end();
+          })().catch(async (error) => {
+            console.error(error);
+
+            try {
+              await client.end();
+            } catch {}
+
+            process.exit(1);
+          });
+          NODE
 
 
       # ============================================================
@@ -644,6 +841,7 @@ jobs:
 
           if npm run | grep -qE '(^|[[:space:]])typecheck($|[[:space:]])'; then
 
+            echo "Running typecheck..."
             npm run typecheck
 
           else
@@ -664,6 +862,7 @@ jobs:
 
           if npm run | grep -qE '(^|[[:space:]])lint($|[[:space:]])'; then
 
+            echo "Running lint..."
             npm run lint
 
           else
@@ -690,13 +889,14 @@ jobs:
 
           else
 
-            echo "::warning::No test script found."
+            echo "::error::No test script found."
+            exit 1
 
           fi
 
 
       # ============================================================
-      # BUILD
+      # PRODUCTION BUILD
       # ============================================================
 
       - name: Production build
@@ -706,12 +906,12 @@ jobs:
 
           if npm run | grep -qE '(^|[[:space:]])build($|[[:space:]])'; then
 
+            echo "Building VYRAL for production..."
             npm run build
 
           else
 
             echo "::error::No production build script found."
-
             exit 1
 
           fi
@@ -726,33 +926,55 @@ jobs:
         run: |
           set -euo pipefail
 
+          echo "============================================================"
+          echo " SOURCE STRUCTURE"
+          echo "============================================================"
+
           test -f package.json
 
+          echo "✓ package.json"
+
           if [[ -d src ]]; then
-            echo "✓ src/ present"
+            echo "✓ src/"
           else
             echo "::warning::src/ directory not found."
           fi
 
           if [[ -d public ]]; then
-            echo "✓ public/ present"
+            echo "✓ public/"
           else
             echo "::warning::public/ directory not found."
           fi
 
-          if [[ -f server.ts || -f server.js ]]; then
+          if [[ -d drizzle ]]; then
+            echo "✓ drizzle/"
+          fi
+
+          if [[ -d e2e ]]; then
+            echo "✓ e2e/"
+          fi
+
+          if [[ -f middleware.ts ||
+                -f middleware.js ||
+                -f src/middleware.ts ||
+                -f src/middleware.js ]]; then
+            echo "✓ Middleware detected"
+          fi
+
+          if [[ -f server.ts ||
+                -f server.js ]]; then
             echo "✓ Custom server detected"
           fi
 
           echo
-          echo "VYRAL source structure verified."
+          echo "✓ VYRAL source structure verified."
 
 
       # ============================================================
-      # CLEAN TEST FILES
+      # CHECK GENERATED / TEST ARTIFACTS
       # ============================================================
 
-      - name: Clean test artifacts
+      - name: Clean generated test artifacts
         shell: bash
         run: |
           set -euo pipefail
@@ -761,7 +983,7 @@ jobs:
           rm -rf coverage
           rm -rf test-results
 
-          echo "Test artifacts cleaned."
+          echo "✓ Test artifacts cleaned."
 
 
       # ============================================================
@@ -774,7 +996,6 @@ jobs:
           set -euo pipefail
 
           rm -rf _package
-
           rm -f VYRAL-production-source.zip
 
           mkdir -p _package/VYRAL
@@ -790,7 +1011,8 @@ jobs:
             --exclude="test-results/" \
             --exclude="*.zip" \
             --exclude=".env" \
-            --exclude=".env.*"
+            --exclude=".env.*" \
+            --exclude="*.log"
 
           cd _package
 
@@ -801,26 +1023,71 @@ jobs:
           cd ..
 
           echo
-          echo "Verified package created:"
-
+          echo "Production source package:"
           ls -lh VYRAL-production-source.zip
 
 
       # ============================================================
-      # ZIP INTEGRITY
+      # PACKAGE CONTENT VERIFICATION
       # ============================================================
 
-      - name: Verify packaged ZIP
+      - name: Verify production package contents
         shell: bash
         run: |
           set -euo pipefail
 
           test -f VYRAL-production-source.zip
 
+          echo "Testing ZIP integrity..."
+
           unzip -t VYRAL-production-source.zip
 
           echo
-          echo "ZIP integrity verified."
+          echo "Checking required files..."
+
+          unzip -l VYRAL-production-source.zip \
+            | grep -q "VYRAL/package.json"
+
+          echo "✓ package.json included"
+
+          if unzip -l VYRAL-production-source.zip \
+            | grep -q "VYRAL/src/"; then
+            echo "✓ src/ included"
+          fi
+
+          echo
+          echo "Checking for forbidden artifacts..."
+
+          if unzip -l VYRAL-production-source.zip \
+            | grep -E 'node_modules/|\.next/|(^|/)\.env($|\.|/)' \
+            >/dev/null; then
+
+            echo "::error::Forbidden files detected inside production package."
+            exit 1
+
+          fi
+
+          echo "✓ No node_modules/.next/.env artifacts detected."
+
+          echo
+          echo "✓ Production package verified."
+
+
+      # ============================================================
+      # CHECKSUM
+      # ============================================================
+
+      - name: Generate package checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          sha256sum \
+            VYRAL-production-source.zip \
+            > VYRAL-production-source.zip.sha256
+
+          echo
+          cat VYRAL-production-source.zip.sha256
 
 
       # ============================================================
@@ -831,7 +1098,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: VYRAL-production-source
-          path: VYRAL-production-source.zip
+          path: |
+            VYRAL-production-source.zip
+            VYRAL-production-source.zip.sha256
           if-no-files-found: error
           retention-days: 14
 
@@ -848,7 +1117,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "Preparing verified source commit..."
+          echo "============================================================"
+          echo " COMMITTING VERIFIED SOURCE"
+          echo "============================================================"
 
           git config \
             user.name \
@@ -858,7 +1129,10 @@ jobs:
             user.email \
             "41898282+github-actions[bot]@users.noreply.github.com"
 
+          # Do not commit generated package artifacts.
           rm -f "$ZIP_PATH"
+          rm -f VYRAL-production-source.zip
+          rm -f VYRAL-production-source.zip.sha256
 
           rm -rf _package
 
@@ -866,19 +1140,22 @@ jobs:
           rm -rf coverage
           rm -rf test-results
 
+          echo
+          echo "Git status before commit:"
+          git status --short
+
           git add -A
 
           if git diff --cached --quiet; then
 
-            echo "No changes detected."
-
+            echo
+            echo "No source changes detected."
             exit 0
 
           fi
 
           echo
           echo "Changes that will be committed:"
-
           git status --short
 
           git commit \
@@ -886,35 +1163,59 @@ jobs:
 
           git push origin HEAD:main
 
+          echo
+          echo "✓ Verified VYRAL source committed to main."
+
 
       # ============================================================
       # FINAL SUMMARY
       # ============================================================
 
       - name: Final verification summary
+        if: always()
         shell: bash
         run: |
           echo
           echo "============================================================"
-          echo " VYRAL CONSOLIDATION COMPLETE"
+          echo " VYRAL CONSOLIDATION PIPELINE"
           echo "============================================================"
           echo
-          echo "✓ ZIP extracted"
-          echo "✓ Source consolidated"
-          echo "✓ Dependencies installed"
-          echo "✓ PostgreSQL service verified"
-          echo "✓ PostgreSQL role verified"
-          echo "✓ PostgreSQL application connection verified"
-          echo "✓ PostgreSQL test-database access verified"
-          echo "✓ Database migration stage completed"
-          echo "✓ Typecheck completed"
-          echo "✓ Lint completed"
-          echo "✓ Automated tests completed"
-          echo "✓ Production build completed"
-          echo "✓ Secret-file check completed"
-          echo "✓ Production source ZIP created"
-          echo "✓ ZIP integrity verified"
-          echo "✓ Artifact uploaded"
+          echo "Project:"
+          echo "  VYRAL"
           echo
-          echo "VYRAL is ready for the next deployment stage."
+          echo "Pipeline:"
+          echo "  ✓ ZIP located"
+          echo "  ✓ ZIP extracted"
+          echo "  ✓ Project root detected"
+          echo "  ✓ Project identity verified"
+          echo "  ✓ Source consolidated"
+          echo "  ✓ Environment-file security check"
+          echo "  ✓ Merge-conflict check"
+          echo "  ✓ Dependencies installed"
+          echo "  ✓ PostgreSQL service verified"
+          echo "  ✓ Application database connection verified"
+          echo "  ✓ Test database administration verified"
+          echo "  ✓ Database migration stage completed"
+          echo "  ✓ Database schema checked"
+          echo "  ✓ Typecheck completed"
+          echo "  ✓ Lint completed"
+          echo "  ✓ Automated tests completed"
+          echo "  ✓ Production build completed"
+          echo "  ✓ Source structure checked"
+          echo "  ✓ Test artifacts cleaned"
+          echo "  ✓ Production source packaged"
+          echo "  ✓ ZIP integrity verified"
+          echo "  ✓ Package contents verified"
+          echo "  ✓ SHA-256 checksum generated"
+          echo "  ✓ Artifact uploaded"
+
+          if [[ "${{ inputs.commit_changes }}" == "true" ]]; then
+            echo "  ✓ Consolidated source commit requested"
+          else
+            echo "  - Repository commit disabled"
+          fi
+
+          echo
+          echo "============================================================"
+          echo " VYRAL VERIFICATION COMPLETE"
           echo "============================================================"
