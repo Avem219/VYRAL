@@ -46,16 +46,16 @@ jobs:
           --health-retries 10
 
     env:
-      # Completely isolated CI database.
       DATABASE_URL: postgresql://vyral:vyral@localhost:5432/vyral_test
       DIRECT_URL: postgresql://vyral:vyral@localhost:5432/vyral_test
 
+      TEST_DATABASE_ADMIN_URL: postgresql://vyral:vyral@localhost:5432/postgres
+      TEST_DATABASE_URL: postgresql://vyral:vyral@localhost:5432/vyral_test
+
       NODE_ENV: test
       CI: true
-
       AUTH_SECRET: github-actions-vyral-test-secret
 
-      # Never use production storage during CI.
       STORAGE_PROVIDER: local
       STORAGE_LOCAL_DIR: ./storage-test
 
@@ -64,7 +64,7 @@ jobs:
     steps:
 
       # ============================================================
-      # 1. CHECKOUT
+      # CHECKOUT
       # ============================================================
 
       - name: Checkout repository
@@ -74,7 +74,7 @@ jobs:
 
 
       # ============================================================
-      # 2. NODE
+      # NODE
       # ============================================================
 
       - name: Setup Node.js 22
@@ -102,7 +102,7 @@ jobs:
 
 
       # ============================================================
-      # 3. LOCATE UPLOADED ZIP
+      # FIND ZIP
       # ============================================================
 
       - name: Locate VYRAL ZIP
@@ -118,8 +118,10 @@ jobs:
 
           if [[ ! -f "$ZIP_PATH" ]]; then
             echo "::error::VYRAL ZIP was not found at: $ZIP_PATH"
+
             echo
             echo "ZIP files currently present in repository:"
+
             find . \
               -type f \
               \( -iname "*.zip" -o -iname "*.ZIP" \) \
@@ -129,6 +131,7 @@ jobs:
             exit 1
           fi
 
+          echo
           echo "ZIP found:"
           ls -lh "$ZIP_PATH"
 
@@ -136,7 +139,7 @@ jobs:
 
 
       # ============================================================
-      # 4. EXTRACT ZIP
+      # EXTRACT ZIP
       # ============================================================
 
       - name: Extract VYRAL ZIP
@@ -148,6 +151,7 @@ jobs:
           set -euo pipefail
 
           rm -rf _vyral_zip
+
           mkdir -p _vyral_zip
 
           echo "Extracting:"
@@ -157,28 +161,20 @@ jobs:
 
           echo
           echo "Extracted structure:"
+
           find _vyral_zip \
             -maxdepth 3 \
             -type f \
             | head -100
 
-          # ----------------------------------------------------------
-          # Detect whether the ZIP contains:
-          #
-          # _vyral_zip/package.json
-          #
-          # or:
-          #
-          # _vyral_zip/VYRAL/package.json
-          #
-          # or another single project directory.
-          # ----------------------------------------------------------
-
           ROOT="_vyral_zip"
 
           if [[ -f "$ROOT/package.json" ]]; then
+
             echo "Project root detected directly in ZIP."
+
           else
+
             candidates=()
 
             while IFS= read -r candidate; do
@@ -186,7 +182,7 @@ jobs:
             done < <(
               find "$ROOT" \
                 -mindepth 1 \
-                -maxdepth 3 \
+                -maxdepth 4 \
                 -type f \
                 -name package.json \
                 -print
@@ -203,7 +199,9 @@ jobs:
             fi
 
             PACKAGE_FILE="${candidates[0]}"
+
             ROOT="$(dirname "$PACKAGE_FILE")"
+
           fi
 
           echo
@@ -216,7 +214,7 @@ jobs:
 
 
       # ============================================================
-      # 5. VERIFY PROJECT BEFORE REPLACING REPOSITORY
+      # VALIDATE PROJECT
       # ============================================================
 
       - name: Validate extracted VYRAL project
@@ -235,7 +233,7 @@ jobs:
             echo "package-lock.json found."
           else
             echo "No package-lock.json found."
-            echo "The workflow will generate one using npm install."
+            echo "npm install will generate one."
           fi
 
           if [[ -f "$ROOT/drizzle.config.ts" || -f "$ROOT/drizzle.config.js" ]]; then
@@ -247,17 +245,22 @@ jobs:
           fi
 
           echo
-          echo "Package:"
+          echo "Package information:"
+
           node -e "
             const p = require('./$ROOT/package.json');
+
             console.log('name:', p.name || '(unnamed)');
             console.log('version:', p.version || '(none)');
-            console.log('scripts:', Object.keys(p.scripts || {}).join(', '));
+            console.log(
+              'scripts:',
+              Object.keys(p.scripts || {}).join(', ')
+            );
           "
 
 
       # ============================================================
-      # 6. CONSOLIDATE ZIP INTO WORKING TREE
+      # REPLACE WORKING TREE
       # ============================================================
 
       - name: Replace working tree with verified ZIP source
@@ -271,8 +274,6 @@ jobs:
           echo "Consolidating source from:"
           echo "$ROOT"
 
-          # Preserve Git metadata, workflow files, uploaded ZIP,
-          # and extraction directory until copying is complete.
           find . \
             -mindepth 1 \
             -maxdepth 1 \
@@ -290,11 +291,12 @@ jobs:
 
           echo
           echo "Consolidated project:"
+
           ls -la
 
 
       # ============================================================
-      # 7. CHECK FOR SECRET FILES
+      # SECURITY — NO REAL ENV FILES
       # ============================================================
 
       - name: Check for environment secrets
@@ -305,18 +307,25 @@ jobs:
           FOUND_SECRET=0
 
           while IFS= read -r file; do
+
             case "$file" in
+
               ./.env.example)
                 ;;
+
               ./.env.template)
                 ;;
+
               ./.env.sample)
                 ;;
+
               *)
                 echo "::error::Secret environment file detected: $file"
                 FOUND_SECRET=1
                 ;;
+
             esac
+
           done < <(
             find . \
               -type f \
@@ -328,16 +337,19 @@ jobs:
           )
 
           if [[ "$FOUND_SECRET" -ne 0 ]]; then
+
             echo
             echo "Remove production environment files before packaging."
+
             exit 1
+
           fi
 
           echo "No secret environment files detected."
 
 
       # ============================================================
-      # 8. INSTALL DEPENDENCIES
+      # INSTALL
       # ============================================================
 
       - name: Install dependencies
@@ -348,20 +360,23 @@ jobs:
           echo "Installing VYRAL dependencies..."
 
           if [[ -f package-lock.json ]]; then
+
             echo "package-lock.json found."
-            echo "Using npm ci for reproducible installation."
+            echo "Using npm ci."
 
             npm ci \
               --no-audit \
               --no-fund
 
           else
+
             echo "No package-lock.json found."
-            echo "Using npm install to create the lockfile."
+            echo "Using npm install."
 
             npm install \
               --no-audit \
               --no-fund
+
           fi
 
           echo
@@ -369,7 +384,44 @@ jobs:
 
 
       # ============================================================
-      # 9. DATABASE CONNECTION CHECK
+      # FIX TEST POSTGRES PASSWORD
+      # ============================================================
+
+      - name: Initialize PostgreSQL test credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Locating PostgreSQL service container..."
+
+          CONTAINER_ID="$(
+            docker ps \
+              --filter 'ancestor=postgres:16' \
+              --format '{{.ID}}' \
+              | head -1
+          )"
+
+          if [[ -z "$CONTAINER_ID" ]]; then
+            echo "::error::PostgreSQL service container was not found."
+            exit 1
+          fi
+
+          echo "PostgreSQL container:"
+          echo "$CONTAINER_ID"
+
+          docker exec \
+            "$CONTAINER_ID" \
+            psql \
+            -U postgres \
+            -d postgres \
+            -c "ALTER USER vyral WITH PASSWORD 'vyral';"
+
+          echo
+          echo "PostgreSQL test credentials initialized successfully."
+
+
+      # ============================================================
+      # VERIFY POSTGRES
       # ============================================================
 
       - name: Verify PostgreSQL connection
@@ -378,6 +430,7 @@ jobs:
           set -euo pipefail
 
           node <<'NODE'
+
           const { Client } = require("pg");
 
           const client = new Client({
@@ -385,25 +438,44 @@ jobs:
           });
 
           (async () => {
+
             await client.connect();
 
-            const result = await client.query(
-              "SELECT current_database() AS database, current_user AS user"
+            const result = await client.query(`
+              SELECT
+                current_database() AS database,
+                current_user AS user
+            `);
+
+            console.log(
+              "Database:",
+              result.rows[0].database
             );
 
-            console.log("Database:", result.rows[0].database);
-            console.log("User:", result.rows[0].user);
+            console.log(
+              "User:",
+              result.rows[0].user
+            );
 
             await client.end();
+
           })().catch((error) => {
+
+            console.error(
+              "PostgreSQL connection failed:"
+            );
+
             console.error(error);
+
             process.exit(1);
+
           });
+
           NODE
 
 
       # ============================================================
-      # 10. DATABASE MIGRATIONS
+      # DATABASE MIGRATIONS
       # ============================================================
 
       - name: Apply isolated database migrations
@@ -413,49 +485,49 @@ jobs:
 
           echo "Preparing isolated PostgreSQL database..."
 
-          # ----------------------------------------------------------
-          # Drizzle is the canonical VYRAL database layer.
-          # ----------------------------------------------------------
-
           if [[ -f drizzle.config.ts || -f drizzle.config.js ]]; then
 
             echo "Drizzle configuration detected."
 
             if [[ -d drizzle ]]; then
+
               echo "Drizzle migrations directory detected."
+
               npx drizzle-kit migrate
+
             else
+
               echo "::warning::Drizzle config exists but no drizzle directory was found."
-              echo "Attempting npm migration script if available."
 
               if npm run | grep -qE '(^|[[:space:]])db:migrate($|[[:space:]])'; then
-                npm run db:migrate
-              elif npm run | grep -qE '(^|[[:space:]])migrate($|[[:space:]])'; then
-                npm run migrate
-              else
-                echo "::warning::No Drizzle migration directory or migration script detected."
-              fi
-            fi
 
-          # ----------------------------------------------------------
-          # Optional Prisma support.
-          #
-          # NEVER use "prisma migrate dev" against CI or production.
-          # ----------------------------------------------------------
+                npm run db:migrate
+
+              elif npm run | grep -qE '(^|[[:space:]])migrate($|[[:space:]])'; then
+
+                npm run migrate
+
+              else
+
+                echo "::warning::No Drizzle migration command detected."
+
+              fi
+
+            fi
 
           elif [[ -f prisma/schema.prisma ]]; then
 
             echo "Prisma schema detected."
 
             if npm run | grep -qE '(^|[[:space:]])db:migrate($|[[:space:]])'; then
-              npm run db:migrate
-            else
-              npx prisma migrate deploy
-            fi
 
-          # ----------------------------------------------------------
-          # Generic migration scripts.
-          # ----------------------------------------------------------
+              npm run db:migrate
+
+            else
+
+              npx prisma migrate deploy
+
+            fi
 
           elif npm run | grep -qE '(^|[[:space:]])db:migrate($|[[:space:]])'; then
 
@@ -468,13 +540,14 @@ jobs:
           else
 
             echo "::warning::No database migration system detected."
-            echo "Continuing because the project may initialize its database inside tests."
+
+            echo "Continuing because tests may initialize the database."
 
           fi
 
 
       # ============================================================
-      # 11. TYPECHECK
+      # TYPECHECK
       # ============================================================
 
       - name: Typecheck
@@ -483,14 +556,18 @@ jobs:
           set -euo pipefail
 
           if npm run | grep -qE '(^|[[:space:]])typecheck($|[[:space:]])'; then
+
             npm run typecheck
+
           else
-            echo "No typecheck script found."
+
+            echo "::warning::No typecheck script found."
+
           fi
 
 
       # ============================================================
-      # 12. LINT
+      # LINT
       # ============================================================
 
       - name: Lint
@@ -499,14 +576,18 @@ jobs:
           set -euo pipefail
 
           if npm run | grep -qE '(^|[[:space:]])lint($|[[:space:]])'; then
+
             npm run lint
+
           else
-            echo "No lint script found."
+
+            echo "::warning::No lint script found."
+
           fi
 
 
       # ============================================================
-      # 13. AUTOMATED TESTS
+      # TESTS
       # ============================================================
 
       - name: Run automated tests
@@ -514,15 +595,21 @@ jobs:
         run: |
           set -euo pipefail
 
+          echo "Running VYRAL automated tests..."
+
           if npm run | grep -qE '(^|[[:space:]])test($|[[:space:]])'; then
+
             npm test
+
           else
+
             echo "::warning::No test script found."
+
           fi
 
 
       # ============================================================
-      # 14. PRODUCTION BUILD
+      # BUILD
       # ============================================================
 
       - name: Production build
@@ -531,15 +618,20 @@ jobs:
           set -euo pipefail
 
           if npm run | grep -qE '(^|[[:space:]])build($|[[:space:]])'; then
+
             npm run build
+
           else
+
             echo "::error::No production build script found."
+
             exit 1
+
           fi
 
 
       # ============================================================
-      # 15. VERIFY REQUIRED VYRAL STRUCTURE
+      # SOURCE STRUCTURE
       # ============================================================
 
       - name: Verify VYRAL source structure
@@ -550,19 +642,19 @@ jobs:
           test -f package.json
 
           if [[ -d src ]]; then
-            echo "src/ present"
+            echo "✓ src/ present"
           else
             echo "::warning::src/ directory not found."
           fi
 
           if [[ -d public ]]; then
-            echo "public/ present"
+            echo "✓ public/ present"
           else
             echo "::warning::public/ directory not found."
           fi
 
           if [[ -f server.ts || -f server.js ]]; then
-            echo "Custom server detected."
+            echo "✓ Custom server detected"
           fi
 
           echo
@@ -570,7 +662,7 @@ jobs:
 
 
       # ============================================================
-      # 16. REMOVE TEST ARTIFACTS
+      # CLEAN TEST FILES
       # ============================================================
 
       - name: Clean test artifacts
@@ -586,7 +678,7 @@ jobs:
 
 
       # ============================================================
-      # 17. CREATE VERIFIED SOURCE PACKAGE
+      # PACKAGE
       # ============================================================
 
       - name: Package verified VYRAL source
@@ -595,6 +687,7 @@ jobs:
           set -euo pipefail
 
           rm -rf _package
+
           rm -f VYRAL-production-source.zip
 
           mkdir -p _package/VYRAL
@@ -614,17 +707,20 @@ jobs:
 
           cd _package
 
-          zip -qr ../VYRAL-production-source.zip VYRAL
+          zip -qr \
+            ../VYRAL-production-source.zip \
+            VYRAL
 
           cd ..
 
           echo
           echo "Verified package created:"
+
           ls -lh VYRAL-production-source.zip
 
 
       # ============================================================
-      # 18. VERIFY GENERATED ZIP
+      # ZIP INTEGRITY
       # ============================================================
 
       - name: Verify packaged ZIP
@@ -641,7 +737,7 @@ jobs:
 
 
       # ============================================================
-      # 19. UPLOAD VERIFIED ARTIFACT
+      # UPLOAD ARTIFACT
       # ============================================================
 
       - name: Upload verified VYRAL package
@@ -654,7 +750,7 @@ jobs:
 
 
       # ============================================================
-      # 20. COMMIT VERIFIED SOURCE
+      # OPTIONAL COMMIT
       # ============================================================
 
       - name: Commit verified consolidated source
@@ -667,28 +763,35 @@ jobs:
 
           echo "Preparing verified source commit..."
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config \
+            user.name \
+            "github-actions[bot]"
 
-          # Do not commit the uploaded consolidation ZIP.
+          git config \
+            user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+
           rm -f "$ZIP_PATH"
 
-          # Do not commit generated packaging/test directories.
           rm -rf _package
+
           rm -rf storage-test
           rm -rf coverage
           rm -rf test-results
 
-          # The generated package-lock.json is intentionally retained.
           git add -A
 
           if git diff --cached --quiet; then
+
             echo "No changes detected."
+
             exit 0
+
           fi
 
           echo
           echo "Changes that will be committed:"
+
           git status --short
 
           git commit \
@@ -698,7 +801,7 @@ jobs:
 
 
       # ============================================================
-      # 21. FINAL STATUS
+      # FINAL SUMMARY
       # ============================================================
 
       - name: Final verification summary
@@ -712,11 +815,12 @@ jobs:
           echo "✓ ZIP extracted"
           echo "✓ Source consolidated"
           echo "✓ Dependencies installed"
-          echo "✓ PostgreSQL verified"
+          echo "✓ PostgreSQL credentials initialized"
+          echo "✓ PostgreSQL connection verified"
           echo "✓ Database migration stage completed"
           echo "✓ Typecheck completed"
           echo "✓ Lint completed"
-          echo "✓ Tests completed"
+          echo "✓ Automated tests completed"
           echo "✓ Production build completed"
           echo "✓ Secret-file check completed"
           echo "✓ Production source ZIP created"
