@@ -7,7 +7,7 @@ import {
   uniqueIndex,
   index,
 } from "drizzle-orm/pg-core";
-import { nowTimestamp } from "@/lib/time";
+import { nowTimestamp } from "../lib/time";
 
 const id = () =>
   uuid("id")
