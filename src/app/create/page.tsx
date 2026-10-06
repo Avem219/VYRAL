@@ -1,24 +1,31 @@
 import Link from "next/link";
+import { ArrowUpRight, Clapperboard, ImagePlus, Mail, Sparkles } from "lucide-react";
 
 const options = [
-  { href: "/", label: "Post", desc: "Share text, photos, or a project with your world." },
-  { href: "/#story", label: "Story", desc: "Add a photo, video, or text story — tap the + on your avatar in the Feed." },
-  { href: "/create/reel", label: "Reel", desc: "Post a short vertical video." },
-  { href: "/express", label: "Express", desc: "Send something private to one person." },
+  { href: "/", label: "Post", icon: ImagePlus, desc: "Share text, photos, video, or something you are building." },
+  { href: "/stories", label: "Story", icon: Sparkles, desc: "View active stories. Add yours directly from the Feed story tray." },
+  { href: "/create/reel", label: "Reel", icon: Clapperboard, desc: "Publish a short vertical video with optional music attribution." },
+  { href: "/express", label: "Express", icon: Mail, desc: "Send a private, rich expression to one person." },
 ];
 
 export default function CreatePage() {
-  return (
-    <div className="max-w-xl mx-auto px-4 py-8">
-      <h1 className="text-lg font-semibold tracking-tight mb-6">Create</h1>
-      <div className="grid grid-cols-2 gap-4">
-        {options.map((o) => (
-          <Link key={o.href} href={o.href} className="vy-panel vy-chamfer p-5 hover:border-crimson transition-colors">
-            <h2 className="text-sm font-medium mb-1">{o.label}</h2>
-            <p className="text-xs text-steel">{o.desc}</p>
-          </Link>
-        ))}
+  return <main className="vy-shell vy-mobile-safe py-8 md:py-12">
+    <div className="max-w-3xl mx-auto">
+      <div className="vy-kicker">VYRAL / Create</div>
+      <h1 className="vy-section-title mt-2">Put something into the world.</h1>
+      <p className="text-sm text-steel mt-2 max-w-xl">Every creation is connected to your real account and VYRAL&apos;s existing privacy, media, and social graph rules.</p>
+
+      <div className="grid sm:grid-cols-2 gap-4 mt-8">
+        {options.map(({ href, label, icon: Icon, desc }) => <Link key={label} href={href} className="group vy-panel vy-chamfer p-6 min-h-[170px] hover:border-crimson transition-colors">
+          <div className="flex items-start justify-between"><span className="w-10 h-10 border border-white/10 bg-white/[.03] flex items-center justify-center text-crimson"><Icon size={19}/></span><ArrowUpRight size={16} className="text-steel group-hover:text-offwhite transition-colors"/></div>
+          <h2 className="text-base font-semibold mt-8">{label}</h2><p className="text-xs text-steel mt-1.5 leading-5">{desc}</p>
+        </Link>)}
+      </div>
+
+      <div className="mt-6 vy-panel vy-chamfer p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div><div className="vy-eyebrow">Private by design</div><p className="text-sm font-medium mt-2">Need to say something that should stay between two people?</p><p className="text-xs text-steel mt-1">Use Express instead of publishing it to the feed.</p></div>
+        <Link href="/express" className="vy-btn-secondary shrink-0">Open Express</Link>
       </div>
     </div>
-  );
+  </main>;
 }

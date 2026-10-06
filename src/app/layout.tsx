@@ -7,33 +7,16 @@ import { ColorModeScript } from "@/components/color-mode-script";
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"),
-  title: "VYRAL — Your world. Connected.",
+  title: { default: "VYRAL — Your world. Connected.", template: "%s · VYRAL" },
   description: "VYRAL is a social universe for discovery, expression, and connection.",
   applicationName: "VYRAL",
+  keywords: ["VYRAL", "social discovery", "social universe", "expression", "community"],
   openGraph: { title: "VYRAL — Your world. Connected.", description: "A social universe for discovery, expression, and connection.", siteName: "VYRAL", type: "website" },
   twitter: { card: "summary_large_image", title: "VYRAL — Your world. Connected.", description: "A social universe for discovery, expression, and connection." },
   manifest: "/manifest.json",
-  icons: {
-    icon: "/favicon.png",
-    apple: "/apple-touch-icon.png",
-  },
+  icons: { icon: "/brand/favicon-32.png", apple: "/brand/apple-touch-icon.png" },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <html lang="en" className="h-full">
-      <head>
-        <ColorModeScript />
-      </head>
-      <body className="min-h-full bg-void text-offwhite">
-        <AuthProvider>
-          <div className="flex min-h-screen">
-            <NavRail />
-            <main className="flex-1 min-w-0 pb-16 md:pb-0">{children}</main>
-          </div>
-          <MobileNav />
-        </AuthProvider>
-      </body>
-    </html>
-  );
+  return <html lang="en" className="h-full"><head><ColorModeScript /></head><body className="min-h-full bg-void text-offwhite"><a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:z-[100] focus:top-3 focus:left-3 focus:bg-crimson focus:text-white focus:px-4 focus:py-2">Skip to content</a><AuthProvider><div className="flex min-h-screen"><NavRail /><main id="main-content" className="flex-1 min-w-0 pb-16 md:pb-0">{children}</main></div><MobileNav /></AuthProvider></body></html>;
 }

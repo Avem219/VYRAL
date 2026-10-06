@@ -7,14 +7,16 @@
   --vy-charcoal: #24262b;    /* borders / dividers */
   --vy-steel: #7a8188;       /* muted text */
   --vy-off-white: #eef1f4;   /* primary text */
-  --vy-crimson: #5aa9e6;     /* primary accent: metallic tech-blue (name kept for compatibility with existing utility classes) */
-  --vy-crimson-dim: #3d7bb0; /* pressed / muted accent */
+  --vy-crimson: #e11d2e;     /* primary accent: metallic tech-blue (name kept for compatibility with existing utility classes) */
+  --vy-crimson-dim: #a80f1d; /* pressed / muted accent */
   --vy-chrome: #b8c2cc;      /* brushed-metal highlight */
   --vy-danger: #e0475a;      /* destructive/alert red, distinct from the brand accent */
-  --vy-signal-blue: #5aa9e6;
+  --vy-signal-blue: #4f8cff;
   --vy-signal-green: #3ecf6e;
   --vy-signal-amber: #e3a635;
   --vy-violet: #8b6bff;
+  --vy-gold: #d6b36a;
+  --vy-gold-soft: rgba(214, 179, 106, 0.18);
 
   --background: var(--vy-void);
   --foreground: var(--vy-off-white);
@@ -33,6 +35,7 @@
   --color-signal-green: var(--vy-signal-green);
   --color-signal-amber: var(--vy-signal-amber);
   --color-violet: var(--vy-violet);
+  --color-gold: var(--vy-gold);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: ui-sans-serif, "Segoe UI", system-ui, -apple-system, sans-serif;
@@ -272,4 +275,74 @@ body::before {
 :root[data-theme="aerodynamic"] .vy-panel,
 :root[data-theme="aerodynamic"] .vy-btn-secondary {
   clip-path: polygon(20px 0, 100% 0, 100% calc(100% - 20px), calc(100% - 20px) 100%, 0 100%, 0 20px);
+}
+
+
+/* --- VYRAL finishing layer ---------------------------------------------- */
+.vy-shell {
+  width: min(1180px, calc(100% - 32px));
+  margin-inline: auto;
+}
+.vy-eyebrow,
+.eyebrow {
+  font-size: 10px;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: .22em;
+  color: var(--vy-steel);
+  font-weight: 700;
+}
+.vy-kicker {
+  color: var(--vy-gold);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .18em;
+  font-weight: 700;
+}
+.vy-section-title {
+  font-size: clamp(1.5rem, 3vw, 2.2rem);
+  font-weight: 650;
+  letter-spacing: -.045em;
+}
+.vy-panel:hover {
+  border-color: rgba(255,255,255,.13);
+}
+.vy-focus:focus-visible,
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--vy-crimson);
+  outline-offset: 3px;
+}
+.vy-icon-btn {
+  width: 38px;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--vy-steel);
+  border: 1px solid rgba(255,255,255,.07);
+  background: rgba(255,255,255,.025);
+  transition: color .16s ease, border-color .16s ease, background .16s ease, transform .16s ease;
+}
+.vy-icon-btn:hover {
+  color: var(--vy-off-white);
+  border-color: rgba(225,29,46,.5);
+  background: rgba(225,29,46,.07);
+  transform: translateY(-1px);
+}
+.vy-gold-line {
+  height: 1px;
+  width: 42px;
+  background: var(--vy-gold);
+  opacity: .75;
+}
+.vy-scrollbar::-webkit-scrollbar { width: 7px; height: 7px; }
+.vy-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.vy-scrollbar::-webkit-scrollbar-thumb { background: var(--vy-charcoal); border-radius: 999px; }
+@media (max-width: 767px) {
+  .vy-shell { width: min(100% - 24px, 680px); }
+  .vy-mobile-safe { padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
 }
