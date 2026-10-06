@@ -1,223 +1,285 @@
 name: Replace Repository With Final VYRAL
 
 on:
-workflow_dispatch:
+  workflow_dispatch:
 
 permissions:
-contents: write
+  contents: write
 
 jobs:
-replace-repository:
-runs-on: ubuntu-latest
+  replace-repository:
+    runs-on: ubuntu-latest
 
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-steps:
-  - name: Checkout repository
-    uses: actions/checkout@v4
-    with:
-      fetch-depth: 0
+      - name: Verify final ZIP exists
+        shell: bash
+        run: |
+          set -euo pipefail
 
-  - name: Verify final ZIP exists
-    shell: bash
-    run: |
-      set -euo pipefail
+          ZIP="VYRAL-FINAL-CONSOLIDATED.zip"
 
-      ZIP="VYRAL-FINAL-CONSOLIDATED.zip"
+          if [[ ! -f "$ZIP" ]]; then
+            echo "::error::Missing $ZIP"
+            echo "Upload VYRAL-FINAL-CONSOLIDATED.zip to the repository root first."
+            exit 1
+          fi
 
-      if [[ ! -f "$ZIP" ]]; then
-        echo "::error::Missing $ZIP"
-        echo "The ZIP must be uploaded to the repository root before running this workflow."
-        exit 1
-      fi
+          echo "Found $ZIP"
+          ls -lh "$ZIP"
 
-      echo "Found $ZIP"
-      ls -lh "$ZIP"
+      - name: Inspect ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
 
-  - name: Inspect ZIP
-    shell: bash
-    run: |
-      set -euo pipefail
+          echo "========== ZIP CONTENTS =========="
+          unzip -l "VYRAL-FINAL-CONSOLIDATED.zip"
+          echo "=================================="
 
-      echo "========== ZIP CONTENTS =========="
-      unzip -l VYRAL-FINAL-CONSOLIDATED.zip
-      echo "=================================="
+      - name: Extract final VYRAL source
+        shell: bash
+        run: |
+          set -euo pipefail
 
-  - name: Extract final VYRAL source
-    shell: bash
-    run: |
-      set -euo pipefail
+          ZIP="VYRAL-FINAL-CONSOLIDATED.zip"
+          EXTRACT_DIR="_vyral_final_extract"
 
-      ZIP="VYRAL-FINAL-CONSOLIDATED.zip"
-      EXTRACT_DIR="_vyral_final_extract"
+          rm -rf "$EXTRACT_DIR"
+          mkdir -p "$EXTRACT_DIR"
 
-      rm -rf "$EXTRACT_DIR"
-      mkdir -p "$EXTRACT_DIR"
+          unzip -q "$ZIP" -d "$EXTRACT_DIR"
 
-      unzip -q "$ZIP" -d "$EXTRACT_DIR"
+          echo "========== EXTRACTED =========="
+          find "$EXTRACT_DIR" -maxdepth 3 -type f | sort | head -200
+          echo "==============================="
 
-      echo "========== EXTRACTED =========="
-      find "$EXTRACT_DIR" -maxdepth 3 -type f | sort | head -200
-      echo "==============================="
+      - name: Locate VYRAL project root
+        shell: bash
+        run: |
+          set -euo pipefail
 
-  - name: Locate VYRAL project root
-    shell: bash
-    run: |
-      set -euo pipefail
+          ROOT="_vyral_final_extract"
 
-      ROOT="_vyral_final_extract"
+          PACKAGE_JSON="$(
+            find "$ROOT" \
+              -type f \
+              -name "package.json" \
+              -not -path "*/node_modules/*" \
+              | head -1
+          )"
 
-      # Find the directory containing package.json.
-      PACKAGE_JSON=$(find "$ROOT" -type f -name package.json -not -path '*/node_modules/*' | head -1 || true)
+          if [[ -z "$PACKAGE_JSON" ]]; then
+            echo "::error::Could not find package.json inside VYRAL-FINAL-CONSOLIDATED.zip"
+            exit 1
+          fi
 
-      if [[ -z "$PACKAGE_JSON" ]]; then
-        echo "::error::Could not find package.json inside VYRAL-FINAL-CONSOLIDATED.zip"
-        exit 1
-      fi
+          PROJECT_ROOT="$(dirname "$PACKAGE_JSON")"
 
-      PROJECT_ROOT=$(dirname "$PACKAGE_JSON")
+          echo "Detected VYRAL project root:"
+          echo "$PROJECT_ROOT"
 
-      echo "Detected project root:"
-      echo "$PROJECT_ROOT"
+          printf '%s\n' "$PROJECT_ROOT" > "_vyral_project_root.txt"
 
-      echo "$PROJECT_ROOT" > _vyral_project_root.txt
+      - name: Validate final project
+        shell: bash
+        run: |
+          set -euo pipefail
 
-  - name: Validate final project
-    shell: bash
-    run: |
-      set -euo pipefail
+          PROJECT_ROOT="$(cat _vyral_project_root.txt)"
 
-      PROJECT_ROOT=$(cat _vyral_project_root.txt)
+          if [[ ! -f "$PROJECT_ROOT/package.json" ]]; then
+            echo "::error::package.json is missing from detected project root."
+            exit 1
+          fi
 
-      test -f "$PROJECT_ROOT/package.json"
+          echo "========== FINAL PROJECT ROOT =========="
+          echo "$PROJECT_ROOT"
+          echo "========================================"
 
-      echo "========== FINAL PROJECT ROOT =========="
-      echo "$PROJECT_ROOT"
-      echo "========================================"
+          echo "========== PROJECT FILES =========="
+          find "$PROJECT_ROOT" \
+            -maxdepth 2 \
+            -type f \
+            ! -path "*/node_modules/*" \
+            ! -path "*/.git/*" \
+            | sort \
+            | head -300
+          echo "==================================="
 
-      echo "========== PROJECT FILES =========="
-      find "$PROJECT_ROOT" -maxdepth 2 -type f \
-        ! -path '*/node_modules/*' \
-        ! -path '*/.git/*' \
-        | sort | head -300
-      echo "==================================="
+      - name: Backup workflow and final ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
 
-  - name: Remove existing repository contents
-    shell: bash
-    run: |
-      set -euo pipefail
+          mkdir -p /tmp/vyral-replacement
 
-      PROJECT_ROOT=$(cat _vyral_project_root.txt)
+          cp "VYRAL-FINAL-CONSOLIDATED.zip" \
+            /tmp/vyral-replacement/VYRAL-FINAL-CONSOLIDATED.zip
 
-      echo "Deleting existing repository contents..."
+          if [[ -f ".github/workflows/replace-with-final-vyral.yml" ]]; then
+            cp ".github/workflows/replace-with-final-vyral.yml" \
+              /tmp/vyral-replacement/replace-with-final-vyral.yml
+          fi
 
-      # Preserve Git metadata so the repository remains connected
-      # to the existing GitHub repository.
-      find . -mindepth 1 -maxdepth 1 \
-        ! -name '.git' \
-        ! -name '_vyral_final_extract' \
-        ! -name '_vyral_project_root.txt' \
-        -exec rm -rf {} +
+          echo "Backup completed."
 
-      echo "Existing source removed."
+      - name: Remove existing repository contents
+        shell: bash
+        run: |
+          set -euo pipefail
 
-  - name: Install final VYRAL source
-    shell: bash
-    run: |
-      set -euo pipefail
+          echo "Deleting existing repository contents..."
 
-      PROJECT_ROOT=$(cat _vyral_project_root.txt)
+          find . \
+            -mindepth 1 \
+            -maxdepth 1 \
+            ! -name ".git" \
+            ! -name "_vyral_final_extract" \
+            ! -name "_vyral_project_root.txt" \
+            -exec rm -rf {} +
 
-      echo "Installing final VYRAL source from:"
-      echo "$PROJECT_ROOT"
+          echo "Existing repository contents removed."
 
-      cp -a "$PROJECT_ROOT"/. .
+      - name: Install final VYRAL source
+        shell: bash
+        run: |
+          set -euo pipefail
 
-      echo "Final VYRAL source installed."
+          PROJECT_ROOT="$(cat _vyral_project_root.txt)"
 
-  - name: Remove temporary files and ZIP
-    shell: bash
-    run: |
-      set -euo pipefail
+          echo "Installing final VYRAL source from:"
+          echo "$PROJECT_ROOT"
 
-      rm -rf _vyral_final_extract
-      rm -f _vyral_project_root.txt
-      rm -f VYRAL-FINAL-CONSOLIDATED.zip
+          cp -a "$PROJECT_ROOT"/. .
 
-      echo "Temporary extraction files and original ZIP removed."
+          echo "Final VYRAL source installed."
 
-  - name: Remove generated/local files
-    shell: bash
-    run: |
-      set -euo pipefail
+      - name: Restore replacement workflow
+        shell: bash
+        run: |
+          set -euo pipefail
 
-      rm -rf node_modules
-      rm -rf .next
-      rm -rf coverage
-      rm -rf dist
-      rm -rf build
-      rm -rf storage-test
+          mkdir -p ".github/workflows"
 
-      echo "Generated/local build artifacts removed."
+          if [[ -f "/tmp/vyral-replacement/replace-with-final-vyral.yml" ]]; then
+            cp "/tmp/vyral-replacement/replace-with-final-vyral.yml" \
+              ".github/workflows/replace-with-final-vyral.yml"
 
-  - name: Verify repository replacement
-    shell: bash
-    run: |
-      set -euo pipefail
+            echo "Replacement workflow restored."
+          else
+            echo "No previous replacement workflow backup found."
+          fi
 
-      echo "========== ROOT =========="
-      ls -la
-      echo "=========================="
+      - name: Remove temporary files and original ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
 
-      test -f package.json
+          rm -rf "_vyral_final_extract"
+          rm -f "_vyral_project_root.txt"
+          rm -f "VYRAL-FINAL-CONSOLIDATED.zip"
 
-      echo "========== package.json =========="
-      node -e "const p=require('./package.json'); console.log('name:', p.name); console.log('version:', p.version)"
-      echo "==================================="
+          echo "Temporary files and original ZIP removed."
 
-      if [[ -f .env || -f .env.local ]]; then
-        echo "::error::Environment file detected."
-        exit 1
-      fi
+      - name: Remove generated and local files
+        shell: bash
+        run: |
+          set -euo pipefail
 
-      if find . -type f \
-        \( -name '.env' -o -name '.env.local' -o -name '.env.production' \) \
-        ! -path './.git/*' \
-        ! -path './node_modules/*' \
-        -print -quit | grep -q .; then
-        echo "::error::Secret environment file detected in final source."
-        exit 1
-      fi
+          rm -rf node_modules
+          rm -rf .next
+          rm -rf coverage
+          rm -rf dist
+          rm -rf build
+          rm -rf storage-test
 
-      echo "Repository replacement verified."
+          echo "Generated and local build artifacts removed."
 
-  - name: Show Git changes
-    shell: bash
-    run: |
-      set -euo pipefail
+      - name: Verify repository replacement
+        shell: bash
+        run: |
+          set -euo pipefail
 
-      git status --short
+          echo "========== ROOT =========="
+          ls -la
+          echo "=========================="
 
-  - name: Commit final VYRAL source
-    shell: bash
-    run: |
-      set -euo pipefail
+          if [[ ! -f "package.json" ]]; then
+            echo "::error::Final repository does not contain package.json."
+            exit 1
+          fi
 
-      git config user.name "github-actions[bot]"
-      git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          echo "========== package.json =========="
 
-      git add -A
+          node -e "
+            const p = require('./package.json');
+            console.log('name:', p.name);
+            console.log('version:', p.version);
+          "
 
-      if git diff --cached --quiet; then
-        echo "No changes detected."
-        exit 0
-      fi
+          echo "==================================="
 
-      git commit -m "Replace repository with final consolidated VYRAL"
+          if [[ -f ".env" || -f ".env.local" || -f ".env.production" ]]; then
+            echo "::error::Environment file detected."
+            exit 1
+          fi
 
-  - name: Push final VYRAL source
-    shell: bash
-    run: |
-      set -euo pipefail
+          if find . \
+            -type f \
+            \( \
+              -name ".env" \
+              -o -name ".env.local" \
+              -o -name ".env.production" \
+              -o -name ".env.development" \
+            \) \
+            ! -path "./.git/*" \
+            ! -path "./node_modules/*" \
+            -print -quit | grep -q .; then
 
-      git push origin HEAD:main
+            echo "::error::Secret environment file detected in final source."
+            exit 1
+          fi
 
+          echo "Repository replacement verified successfully."
+
+      - name: Show Git changes
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "========== GIT STATUS =========="
+          git status --short
+          echo "================================"
+
+      - name: Commit final VYRAL source
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "No changes detected."
+            exit 0
+          fi
+
+          git commit -m "Replace repository with final consolidated VYRAL"
+
+      - name: Push final VYRAL source
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git push origin HEAD:main
+
+          echo "========================================"
+          echo "FINAL VYRAL REPOSITORY REPLACED"
+          echo "========================================"
